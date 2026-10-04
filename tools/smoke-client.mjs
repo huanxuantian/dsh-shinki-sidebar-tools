@@ -36,7 +36,13 @@ function makeCtx(log) {
     effect: (f) => { try { const d = (typeof f === 'function') ? f() : undefined; if (typeof d === 'function') d(); } catch (e) { log.push('effect 回调抛错: ' + (e && e.message)); } },
     logger: { info: () => {}, warn: () => {}, error: () => {}, debug: () => {} },
     locale: { register: () => {}, subscribe: () => () => {}, t: (k) => k, locale: 'zh-CN' },
-    slots: { register: () => () => {}, inject: () => () => {}, entries: () => [], subscribe: () => () => {} },
+    slots: {
+      register: (opts, comp) => { REG.push({ api: 'slots', opts: opts || {}, comp }); return () => {}; },
+      inject: (name, cb) => { try { cb(); } catch (e) { log.push('slots.inject 回调抛错: ' + (e && e.message)); } return () => {}; },
+      entries: () => [], subscribe: () => () => {},
+    },
+    sidebarRightTabs: { register: (def) => { REG.push({ api: 'tabs', opts: def || {} }); return () => {}; } },
+    sidebarRight: { openTab: () => {}, openTabIn: () => {} },
     on: () => {}, emit: () => {},
   };
   return ctx;
@@ -58,6 +64,7 @@ const doc = {
 
 for (const file of files) {
   const log = [];
+  const REG = [];
   const name = file.split('/').slice(-3, -2)[0] || file;
   try {
     const code = fs.readFileSync(file, 'utf8');
@@ -82,7 +89,22 @@ for (const file of files) {
     if (typeof exportsObj.apply !== 'function') { console.log(`  ⚠️ ${name}: 无 apply（跳过调用）`); continue; }
     const ctx = makeCtx(log);
     exportsObj.apply(ctx);
-    console.log(`  ✅ ${name}: 加载 + apply 成功${log.length ? '（' + log.length + ' 条日志）' : ''}`);
+    // ── 断言：契约检查（护栏升级）──
+    const problems = [];
+    for (const r of REG) {
+      if (r.api === 'slots' && r.opts.name === 'sidebar.right.pane.tab') {
+        if (typeof r.opts.title !== 'function') problems.push('sidebar.right.pane.tab 槽位条目缺少 title() 函数（官方渲染器会调用 entry.title()，缺则整个 pane 崩溃）');
+      }
+      if (r.api === 'tabs') {
+        if (r.opts.title != null && typeof r.opts.title !== 'function' && typeof r.opts.title !== 'string') problems.push('sidebarRightTabs.register 的 title 既非函数也非字符串');
+        if (r.opts.guide != null && !Array.isArray(r.opts.guide)) problems.push('sidebarRightTabs.register 的 guide 必须是数组');
+        if (Array.isArray(r.opts.guide)) for (const g of r.opts.guide) {
+          if (!g || typeof g !== 'object' || !g.id || g.title == null) problems.push('guide 条目缺 id/title');
+        }
+      }
+    }
+    if (problems.length) { failed++; console.log(`  ❌ ${name}: 契约断言失败 → ` + problems.join('；')); continue; }
+    console.log(`  ✅ ${name}: 加载 + apply 成功 + 契约断言通过（注册 ${REG.length} 项）${log.length ? '（' + log.length + ' 条日志）' : ''}`);
   } catch (e) {
     failed++;
     console.log(`  ❌ ${name}: ${e && e.message}`);
