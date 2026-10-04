@@ -92,3 +92,68 @@ DSH 右侧边栏增强（纯客户端、零注入）：
 3. **形态 A（下方视图）** —— 先确认官方槽位；若官方无槽位，则自绘面板 + 复用本插件浮动层能力。
 
 > 每一步都遵守本插件既有约定：**能力探测 + 优雅降级 + 只 `console.warn` 不影响宿主启动**。
+
+## 适配层契约：一句声明，落入多种视图形态
+
+### 定位
+
+本插件同时承担**多形态视图适配层（middleware）**：消费方插件**只声明一次**，由本插件负责把它
+落到**下方视图 / 主视图模式 / 独立弹窗**等形态。**消费方不直接调用官方或第三方 API。**
+
+### 为什么要这层
+
+| 问题 | 由本层吸收 |
+|---|---|
+| DSH 破坏性更新 / 新特性（槽位改名、API 换签名、新增形态）| 只改**本插件一处**，已接入的插件**零改动** |
+| 上游 `dsh-better-sidebar` 跟不上官方，或自身引入破坏性改动 | 本插件**优先官方实现**，第三方仅作**过渡桥**；可随时禁用而上层不受影响 |
+| 每个插件各自对接多个视图形态，重复且易踩坑 | 统一契约 + 统一降级策略，接入成本降到一句声明 |
+| 官方扩展点尚未稳定 | 能力探测 + 降级链，**缺失只是少一个形态，不阻塞插件激活** |
+
+### 消费方 API（一句声明）
+
+```js
+// 消费方插件里只需这一句；与具体形态、官方 API、第三方插件均解耦
+const handle = ctx.shinkiViews.register({
+  id: 'my-plugin-view',            // 全局唯一；同名以先注册者为准
+  title: '我的视图',                // 展示名（可传 i18n 文案）
+  icon: MyIcon,                    // 可选
+  order: 50,                       // 可选，形态内排序
+  render: (props) => el,           // 渲染函数：接收稳定 props，返回 React 元素/节点
+  targets: ['bottom', 'mainView', 'popup'],   // 想落到哪些形态；不支持者自动跳过
+});
+// 卸载时：handle.dispose()
+```
+
+**稳定 props 契约**（保证同一 `render` 可被任何形态承载）：
+
+| 字段 | 含义 |
+|---|---|
+| `container` | 承载容器（形态决定尺寸/位置）|
+| `form` | 当前形态：`'bottom' \| 'mainView' \| 'popup'` |
+| `close()` | 请求关闭/收起当前形态（弹窗=关窗，主视图=切回）|
+| `setTitle(t)` | 动态改标题 |
+| `isDetached` | 是否运行在独立窗口（弹窗形态为 true，跨窗口通信走 `BroadcastChannel`）|
+
+### 适配层内部：形态 → 实现（按优先级探测）
+
+| 形态 | 实现优先级 |
+|---|---|
+| `bottom` | ① 官方下方面板槽位（待确认 `dsh-client-ui-layout`）→ ② 本插件自绘面板 → ③ **过渡桥**：`betterSidebar.registerTab` |
+| `mainView` | ① 官方 `registerTrajectoryConversationView` + `ctx.slots`（与「对话/轨迹」同级）→ ② 跳过并 `console.warn` |
+| `popup` | ① 本插件 host 路由 `GET /shinki-tools/html?view=<id>` 返回自包含 HTML → `window.open(url,'_blank','noopener,noreferrer')`（无外部依赖）|
+
+**降级原则**：任一形态不可用 ⇒ 只 `console.warn` 并跳过该形态，**其余形态照常**，绝不抛错、绝不让宿主/消费方 `pending`。
+
+### 兼容与版本
+
+- 契约带版本：`CONTRACT_VERSION = 1`；适配层承诺同时支持 **N 与 N-1**，升级期不破坏存量插件。
+- 能力探测而非版本号判断：一律 `typeof fn === 'function'` 实测，避免"看着有其实没有"。
+- 所有注册句柄可 `dispose()`；插件卸载/热重载后可干净重注册。
+
+### 迁移路线（与上文路线图一致）
+
+1. 适配层上线 `register()`，`bottom` 先走 **betterSidebar 过渡桥**（存量行为不变）；
+2. 实现 `popup`（零外部依赖，可独立验证 host 路由 + `window.open`）；
+3. 接官方 `mainView`；
+4. `bottom` 自实现，**禁用 `better-sidebar` 后回归验证**；
+5. 消费方逐个切换为"一句声明"（首个：`dsh-shinki-music`），完成后再评估是否彻底移除过渡桥。
