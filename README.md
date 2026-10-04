@@ -310,3 +310,26 @@ node tools/smoke-client.mjs <pkg>/lib/client.js [更多 client.js ...]
    要改就**整体重写 `apply`**、options **逐字段手写**。
 2. **顺序固定不可搬移**：`① options（纯数据）→ ② let viaAdapter → ③ waitService('shinkiViews')（立即）
    → ④ waitService('betterSidebar') + setTimeout 回落`；改完做**位置序核对**（新模式块不得落在定时器内）。
+
+## `bottom` 自实现的关键线索（已侦察，勿丢）
+
+目标是让 `targets: ['bottom']` **不再经过 better-sidebar 过渡桥**，从而彻底移除第三方依赖。
+
+### 官方正主：`@deepseek-ai/dsh-client-ui-dockkit`
+
+侦察方式：类型声明 `.../dsh-client-ui-sidebar-right/lib/types/**/*.d.ts`。
+
+| 证据 | 内容 |
+|---|---|
+| 独立包 | **`@deepseek-ai/dsh-client-ui-dockkit`**（注释自称 *The docking kit*）|
+| 它导出的类型 | `PaneId` · `TabId` · `TabRecord` · `DockLabels` · `LayoutState` |
+| 语义 | `focus.d.ts`: `readonly host: 'dock' \| 'float'`（**停靠** 与 **浮动** 两类宿主）|
+| `sidebar-right` 的用法 | `client/labels.d.ts` 里 `dockLabels(t, split?, close?) → DockLabels`；`contract/slots.d.ts` 注明"每个 kind 的全部 tab，**无论 docked 还是 floating**" |
+| `sidebar-right` 服务方法（可复用）| `openTab` · `openTabIn` · `openWithPaneFocus` · **`dockFloat`** · `dockPaneIds` · `activeDockPaneId` · `registerSidebarShortcuts` · `openRightbar` |
+
+### 下一步（实现顺序）
+
+1. 读 `dsh-client-ui-dockkit` 的 `.d.ts`，确认**注册一个 pane/tab 并指定停靠到底部**所需的最小调用；
+2. 读 `dsh-client-ui-sidebar-right` 的 `contract/slots.d.ts`，找**底部 pane 的槽位名**（或 `dockPaneIds` 的语义）；
+3. 用上述官方 API 替换中间件 `bottom` 形态里的 `waitFor(['betterSidebar']) + sb.registerTab(...)`；
+4. 回归：三种形态照常 + **禁用 better-sidebar 后 Tab 仍落底部** ⇒ 之后即可从 profile 移除该第三方包（并查清此前"从 bundles 移除导致 profile 起不来"的原因）。
