@@ -176,3 +176,45 @@ const handle = ctx.shinkiViews.register({
 2. **`≡` 菜单与右键菜单是两套代码**（`openAllViews` / `showMenu`）⇒ 共用逻辑要抽函数，改一处不够。
 3. **菜单可滚动**（`maxHeight = vh-16` + `overflowY:auto`）⇒ 新增分区要放**最前**，否则会被挤出可视区。
 4. **QtWebEngine 的 `window.open` 不可靠**：会把调用当成本页导航 ⇒ 弹窗类形态应以**面板内承载**为默认，真窗口作为可选项。
+
+## mainView 接入点（已读源码确认）
+
+来源：`@deepseek-ai/dsh-client-ui-trajectory/lib/client.js`（官方包，只读侦察）。
+
+### 真实扩展点
+
+```js
+// 官方内部函数本身就这一句：
+function registerTrajectoryConversationView(ctx) {
+  ctx.uiConversation.views.register(trajectoryViewDefinition);
+}
+```
+⇒ **主视图（与「对话 / 轨迹」同级）的注册入口是 `ctx.uiConversation.views.register(definition)`**，
+而非某个专用 API；`uiConversation` 由官方包 `@deepseek-ai/dsh-client-ui-conversation` 掌管
+（trajectory 包的 `dsh.client.inject` 里正是它）。
+
+### 官方轨迹视图自身的注册写法（可照抄的范式）
+
+```js
+ctx.uiSession.provide({ hooks: ["trajectory"], resolve: … });
+
+ctx.slots.inject("conversation.view", () => ctx.slots.register({
+  name: "conversation.view",
+  id: "trajectory",
+  order: 10,
+  locale: NS,
+  label: () => t("view.trajectory"),      // ← 同级 tab 的标题
+  children: { "conversation.trajectory.…": … },   // ← 该视图的内部槽位
+}));
+```
+
+### 适配层的实现计划（含已知风险）
+
+1. `waitFor(ctx, ['uiConversation', 'slots'], …)` —— **用运行时探测取服务，不写进 `dsh.client.inject`**
+   （教训：把无法从 profile 解析的包写进 inject 会导致**整个 client graph 起不来**）；
+2. `svc(ctx,'uiConversation').views.register({ id: spec.id, order: spec.order, label: () => spec.title })`；
+3. `slots.inject('conversation.view', () => slots.register({ name: 'conversation.view', id: spec.id, order, label, children: {…} }))`；
+4. 全部包在 `typeof … === 'function'` 能力探测里，缺失只 `console.warn` 并跳过该形态。
+
+**待确认（实现前必须先读）**：`views.register(definition)` 的完整字段形状（`trajectoryViewDefinition` 的定义体）
+与视图 body 对应的 `children` 槽位映射 —— 否则会出现"tab 出现了但内容是空的"。
