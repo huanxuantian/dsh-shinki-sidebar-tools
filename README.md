@@ -280,3 +280,33 @@ h.dispose();
 > `node --check` **查不出**作用域/时序错误（实践中有三轮教训：`tabOptions is not defined`、`viaAdapter` TDZ、
 > 新模式块被塞进 `setTimeout`）。因此：**整体重写 `apply`**、改完做**位置序核对**，不要外科式搬移代码块。
 > 另：`bottom` 形态必须 `waitFor(betterSidebar)`（否则早注册的消费方 Tab 会消失 —— 实测 svn-graph）。
+
+## 改插件客户端代码的强制流程（护栏）
+
+`node --check` **只能查语法**，查不出作用域/时序/TDZ/未定义变量等**运行时**错误 —— 本项目因此出现过
+`tabOptions is not defined`、`viaAdapter` TDZ、新模式块被塞进 `setTimeout`、
+以及"自动抽取 options 导致 `createTab` 函数头被截断 ⇒ 插件 failed"等故障，
+其中一次直接造成 `web boot: 1 entry did not activate` ⇒ **profile 起不来**。
+
+**因此：任何插件 `lib/client.js` 的改动，落盘（同步到运行时）前必须跑冒烟测试。**
+
+```bash
+# 语法（必要但不充分）
+node --check <pkg>/lib/client.js
+
+# 冒烟（必要）：桩环境真实加载 bundle 并调用 apply，捕获运行时错误
+node tools/smoke-client.mjs <pkg>/lib/client.js [更多 client.js ...]
+#  ✅ 输出 "加载 + apply 成功" ⇒ 允许同步
+#  ❌ 输出 "❌ <pkg>: <错误>"    ⇒ 禁止同步，先修
+```
+
+冒烟测试 `tools/smoke-client.mjs` 会：桩化 `window.__ModuleLoader__` / `document` / `react` / `localStorage` /
+`Audio` / `MutationObserver` 等，加载 bundle（`factory(require)`）并调用 `apply(桩 ctx)`，
+同时捕获 `effect` 回调抛错 ⇒ 覆盖"能加载"与"能激活"两件事。
+
+### 另外两条硬性约定（血泪）
+
+1. **不要用脚本自动抽取/搬移代码块**（尤其 options 对象）—— 抽取边界极易偏移而产生"语法合法但语义错"的代码；
+   要改就**整体重写 `apply`**、options **逐字段手写**。
+2. **顺序固定不可搬移**：`① options（纯数据）→ ② let viaAdapter → ③ waitService('shinkiViews')（立即）
+   → ④ waitService('betterSidebar') + setTimeout 回落`；改完做**位置序核对**（新模式块不得落在定时器内）。
