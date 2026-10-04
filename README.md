@@ -218,3 +218,43 @@ ctx.slots.inject("conversation.view", () => ctx.slots.register({
 
 **待确认（实现前必须先读）**：`views.register(definition)` 的完整字段形状（`trajectoryViewDefinition` 的定义体）
 与视图 body 对应的 `children` 槽位映射 —— 否则会出现"tab 出现了但内容是空的"。
+
+## 契约 v2：后台生命周期（供任意插件复用）
+
+原则：**插件只声明"想要什么行为"，暂停/继续/停止的派发由本中间件实现**。
+
+### 声明式（随视图注册，自动登记）
+
+```js
+ctx.shinkiViews.register({
+  id, title, render, targets,
+  background: 'force',                 // 'pause'(默认) | 'remember' | 'stop' | 'force' | true | false
+  onSuspend: ({ policy }) => { … },    // 视图卸载：pause / remember 时调用
+  onResume:  ({ policy }) => { … },    // 视图重新挂载
+  onStop:    ({ policy }) => { … },    // policy === 'stop' 时调用（缺省回退 onSuspend）
+});
+```
+
+### 命令式（适合后台任务这类非视图资源）
+
+```js
+const h = ctx.shinkiViews.lifecycle.register('my-task', { onSuspend, onResume, onStop });
+ctx.shinkiViews.lifecycle.dispatch('my-task', 'suspend', 'pause');
+ctx.shinkiViews.lifecycle.policies();   // ['pause','remember','stop','force']
+ctx.shinkiViews.lifecycle.keys();
+h.dispose();
+```
+
+### 派发语义
+
+| 策略 | 卸载 | 重新挂载 |
+|---|---|---|
+| `force` / `true` | **不动作**（继续后台运行）| `onResume` |
+| `pause`（默认）/ `remember` | `onSuspend(policy)` | `onResume` |
+| `stop` | `onStop(policy)`（无则回退 `onSuspend`）| `onResume` |
+
+### 实现方式
+
+`wrapView(spec, form)` 在**三种形态**（bottom / mainView / popup）中统一包装消费方 `render`：
+挂载时派发 `onResume`、卸载时按策略派发 `onSuspend`/`onStop`，并注入 `props.background`
+⇒ 插件无需手写生命周期。已用于 `dsh-shinki-music`（`background:'force'`，切视图不断播）。
