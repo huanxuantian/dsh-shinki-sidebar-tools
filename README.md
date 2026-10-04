@@ -339,3 +339,11 @@ node tools/smoke-client.mjs <pkg>/lib/client.js [更多 client.js ...]
 2. 读 `dsh-client-ui-sidebar-right` 的 `contract/slots.d.ts`，找**底部 pane 的槽位名**（或 `dockPaneIds` 的语义）；
 3. 用上述官方 API 替换中间件 `bottom` 形态里的 `waitFor(['betterSidebar']) + sb.registerTab(...)`；
 4. 回归：三种形态照常 + **禁用 better-sidebar 后 Tab 仍落底部** ⇒ 之后即可从 profile 移除该第三方包（并查清此前"从 bundles 移除导致 profile 起不来"的原因）。
+
+### 已验证的坑：不要给 `sidebarRightTabs.register` 传 `guide`
+
+**两次实测**：一旦在注册里加 `guide: [{id, order, title, description}]`，「+」打开的**指南界面就变空白**
+（撤掉即恢复）。因此：
+- 中间件注册视图时**不传 `guide`**；
+- "类型已注册但未打开"的视图，进入路径走**我们自己的 `≡ → 可创建`**（动态清单，已可用）；
+- 若要重新支持 `+` 指南，须**先读官方 `SidebarRightGuideEntry` 的精确类型/实现**再动手，不可照搬字段名。
