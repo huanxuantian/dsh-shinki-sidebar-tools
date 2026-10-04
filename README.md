@@ -157,3 +157,22 @@ const handle = ctx.shinkiViews.register({
 3. 接官方 `mainView`；
 4. `bottom` 自实现，**禁用 `better-sidebar` 后回归验证**；
 5. 消费方逐个切换为"一句声明"（首个：`dsh-shinki-music`），完成后再评估是否彻底移除过渡桥。
+
+## 实现进度（适配层）
+
+| 步 | 内容 | 状态 | 证据 |
+|---|---|---|---|
+| — | 适配层骨架：`ctx.provide('shinkiViews', …)`（cordis 不允许直接赋值服务）+ 逐形态能力探测与降级 | ✅ 已完成 | 日志 `适配层就绪：ctx.shinkiViews (v1)`，无 `without provide` |
+| — | **popup 形态**：默认**面板内全屏承载**（自绘标题栏 + ✕ + Esc） | ✅ 已验证 | 用户实测：铺满界面、正常显示、关闭返回主页 |
+| — | popup 备选路径 `openPopupWindow()`（真·独立窗口） | ⏸ 保留不用 | 本宿主 QtWebEngine 未接管 `createWindow`：`window.open(location.origin+'/')` 被当作**当前视图跳转**，表现为"闪一下并刷新主页面" |
+| 1 | 第一个消费方：`dsh-shinki-music` 一句声明 `targets:['popup']` | ✅ 已验证 | 用户实测 `≡ → 独立弹窗 → dsh-shinki-music` 全屏播放器正常 |
+| 2 | `mainView`（与「对话/轨迹」同级）| 🔜 待做 | 接入点：官方 `@deepseek-ai/dsh-client-ui-trajectory` 的 `registerTrajectoryConversationView`（签名待读，见下）|
+| 3 | `bottom` 自实现 → 禁用 `dsh-better-sidebar` 回归 | 🔜 待做 | 先确认 `dsh-client-ui-layout` 的下方面板槽位 |
+| 4 | 其余插件（git-graph / serial-monitor / svn-graph）逐个切换为一句声明 | 🔜 待做 | — |
+
+### 经验记录（避免重复踩坑）
+
+1. **服务必须 `provide`**：`ctx.shinkiViews = …` 会抛 `cannot set property "…" without provide`；且**必须用 try/catch 暴露出来**，否则会被静默吞掉。
+2. **`≡` 菜单与右键菜单是两套代码**（`openAllViews` / `showMenu`）⇒ 共用逻辑要抽函数，改一处不够。
+3. **菜单可滚动**（`maxHeight = vh-16` + `overflowY:auto`）⇒ 新增分区要放**最前**，否则会被挤出可视区。
+4. **QtWebEngine 的 `window.open` 不可靠**：会把调用当成本页导航 ⇒ 弹窗类形态应以**面板内承载**为默认，真窗口作为可选项。
