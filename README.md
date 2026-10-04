@@ -54,3 +54,41 @@ DSH 右侧边栏增强（纯客户端、零注入）：
 - 打开视图：`sidebarRight.openTab` 优先，`betterSidebar` 的方法名探测**仅作兜底**（5 处引用，全部在兜底分支）
 - 视图发现：**动态**读官方注册表 `sidebarRightTabs.entries()`，硬编码清单只在枚举失败时兜底
 - 与 `dsh-shinki-music` **无强依赖**（双向审计通过）：音乐插件自带四个入口，本插件也可独立工作
+
+## 三种视图形态的支持方案（对接官方 API / 参考 better-sidebar）
+
+目标：本插件除"右侧边栏可达性增强"外，进一步提供**三种扩展视图形态**，并逐步摆脱对第三方
+`dsh-better-sidebar` 的依赖。以下为**依据实测源码得出的接入口**（非猜测）。
+
+### 形态 A：下方扩展视图（bottom panel tabs）
+
+| 项 | 内容 |
+|---|---|
+| better-sidebar 现状 | `ctx.betterSidebar.registerTab({ id, title, order, single, createTab, component })`；**注册 id 必须等于 `createTab().tab.type`**（本项目踩过：不等会报"插件未加载，标签页暂不可用"） |
+| 自实现要点 | 下方容器属于 third-party 自绘 ⇒ 自实现需**自己渲染底部面板**并挂到官方槽位；待确认项：`@deepseek-ai/dsh-client-ui-layout` 是否暴露下方面板槽位（下一步先读它的 `lib/client.js` 槽位清单） |
+| 兼容策略 | 先提供 `registerBottomTab` 等价 API，内部**优先官方槽位**，无槽位时降级为自绘浮层 |
+
+### 形态 B：主视图模式（与「对话 / 轨迹」同级）
+
+| 项 | 内容 |
+|---|---|
+| 官方接入口 | **`@deepseek-ai/dsh-client-ui-trajectory`** 暴露 **`registerTrajectoryConversationView(...)`**（该包 `lib/client.js` 内可见 2 处调用样例），并配合 **`ctx.slots.register/inject`** 注入视图内容 |
+| 参考 | better-sidebar 的 `dsh.client.inject` 含 `@deepseek-ai/dsh-client-ui-conversation`，即"主视图模式"这一层由官方 conversation/trajectory 包掌管 |
+| 自实现要点 | 用 `registerTrajectoryConversationView` 注册一个 mode 视图 + 用 `slots` 注入 React 组件；**需先读该包签名**（参数形状：id/title/render/order 待确认） |
+| 风险 | 该 API 属官方内部扩展点，跨版本可能变动 ⇒ **必须做能力探测**（`typeof fn === 'function'`）并在缺失时只 `console.warn`，绝不阻塞宿主 |
+
+### 形态 C：独立弹窗视图（detached window）
+
+| 项 | 内容 |
+|---|---|
+| better-sidebar 做法（已验证） | **自建 host 路由**提供独立 HTML 页面：客户端可见 `/sidebar/html`、`/client/html`、`/bundle`；随后 `window.open(url, '_blank', 'noopener,noreferrer')` 打开 |
+| 本插件落地 | 本插件已有 host 半边（`lib/index.js`）⇒ 增加 `GET /shinki-tools/html?...` 返回**自包含 HTML**（内联需渲染的 JS/CSS），客户端 `window.open` 打开；需要跨窗口同步时用 `BroadcastChannel` 或轮询 |
+| 安全 | 复用回环信任栅栏（socket + Host 双校验）+ 仅允许白名单视图 kind，禁止任意 HTML/路径注入 |
+
+### 落地顺序（与上文路线图对齐）
+
+1. **形态 C（弹窗）** —— 最独立、与第三方零耦合，先做可最快验证 host 路由 + `window.open` 通路；
+2. **形态 B（主视图模式）** —— 接官方 `registerTrajectoryConversationView`，做成"有就用、无则降级"；
+3. **形态 A（下方视图）** —— 先确认官方槽位；若官方无槽位，则自绘面板 + 复用本插件浮动层能力。
+
+> 每一步都遵守本插件既有约定：**能力探测 + 优雅降级 + 只 `console.warn` 不影响宿主启动**。
