@@ -28,8 +28,22 @@ function makeReact() {
     useMemo: (f) => (typeof f === 'function' ? f() : undefined), useCallback: (f) => f,
     Fragment: 'Fragment', createContext: () => ({ Provider: 'P', Consumer: 'C' }), forwardRef: (f) => f };
 }
-function makeCtx(log) {
+function makeCtx(log, REG) {
   const services = new Map();
+  // 预置桩服务：让插件的 waitService/waitFor 真正命中 ⇒ 走到注册路径（否则断言空转）
+  services.set('shinkiViews', {
+    CONTRACT_VERSION: 2,
+    register: (spec) => { REG.push({ api: 'views', opts: spec || {} }); return { dispose() {} }; },
+    openPopup: () => {}, openPopupWindow: () => {}, popupables: () => [], list: () => [], forms: () => ['bottom', 'popup', 'mainView'],
+    lifecycle: { register: () => ({ dispose() {} }), dispatch: () => {}, policies: () => [], keys: () => [] },
+  });
+  services.set('betterSidebar', {
+    registerTab: (opts) => { REG.push({ api: 'betterSidebar', opts: opts || {} }); return () => {}; },
+    updateTab: () => {}, getSnapshot: () => ({ prefs: { pluginSettings: {} } }),
+  });
+  services.set('sidebarRightTabs', { register: (def) => { REG.push({ api: 'tabs', opts: def || {} }); return () => {}; }, entries: () => [] });
+  services.set('sidebarRight', { openTab: () => {}, openTabIn: () => {} });
+  services.set('locale', { register: () => {}, subscribe: () => () => {}, t: (k) => k, locale: 'zh-CN' });
   const ctx = {
     get: (n) => services.get(n),
     provide: (n, v) => { services.set(n, v); return v; },
@@ -87,11 +101,21 @@ for (const file of files) {
     if (!def || typeof def.factory !== 'function') throw new Error('未捕获到 ModuleLoader.load 定义');
     const exportsObj = def.factory(requireStub);
     if (typeof exportsObj.apply !== 'function') { console.log(`  ⚠️ ${name}: 无 apply（跳过调用）`); continue; }
-    const ctx = makeCtx(log);
+    const ctx = makeCtx(log, REG);
     exportsObj.apply(ctx);
     // ── 断言：契约检查（护栏升级）──
     const problems = [];
     for (const r of REG) {
+      if (r.api === 'views') {
+        if (!r.opts.id) problems.push('shinkiViews.register 缺 id');
+        if (typeof r.opts.render !== 'function') problems.push('shinkiViews.register 缺 render 函数（' + (r.opts.id || '?') + '）');
+        if (!Array.isArray(r.opts.targets) || !r.opts.targets.length) problems.push('shinkiViews.register 缺 targets（' + (r.opts.id || '?') + '）');
+      }
+      if (r.api === 'betterSidebar') {
+        const o = r.opts;
+        if (!o.id) problems.push('betterSidebar.registerTab 缺 id');
+        if (o.title != null && typeof o.title !== 'function' && typeof o.title !== 'string') problems.push('registerTab 的 title 类型可疑（' + o.id + '）');
+      }
       if (r.api === 'slots' && r.opts.name === 'sidebar.right.pane.tab') {
         if (typeof r.opts.title !== 'function') problems.push('sidebar.right.pane.tab 槽位条目缺少 title() 函数（官方渲染器会调用 entry.title()，缺则整个 pane 崩溃）');
       }
