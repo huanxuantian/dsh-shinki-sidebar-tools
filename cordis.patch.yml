@@ -1,0 +1,4 @@
+# dsh-shinki-sidebar-tools bundle patch（纯客户端增强，host 半边为占位）
+- insert:
+    - id: dsh-shinki-sidebar-tools
+      name: 'dsh-shinki-sidebar-tools'
