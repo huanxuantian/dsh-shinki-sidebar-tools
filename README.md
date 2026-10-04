@@ -258,3 +258,25 @@ h.dispose();
 `wrapView(spec, form)` 在**三种形态**（bottom / mainView / popup）中统一包装消费方 `render`：
 挂载时派发 `onResume`、卸载时按策略派发 `onSuspend`/`onStop`，并注入 `props.background`
 ⇒ 插件无需手写生命周期。已用于 `dsh-shinki-music`（`background:'force'`，切视图不断播）。
+
+## 待办（已确认延后，勿丢）
+
+| # | 事项 | 现状 / 做法 | 备注 |
+|---|---|---|---|
+| 1 | **隐藏自检视图** `dsh-shinki-tools:sandbox` | 当前会出现在 `≡ → 可创建` 列表里；做法：视图声明加 `hidden: true`，清单构建处过滤（约 3 行）| **用户已确认"后续再隐藏"** |
+| 2 | **serial-monitor 的 4 处运行时 `ctx.betterSidebar.*`** | `updateTab`（下方面板停靠）/ `getSnapshot`（设置持久化）在去掉 `inject: betterSidebar` 后属性访问被 cordis 拒绝 ⇒ 有 `?.`+`try/catch` 不崩，但**两个功能静默降级**；做法：改为安全取法 `(ctx.get ? ctx.get('betterSidebar') : ctx.betterSidebar)`（4 行）| 只影响该插件的老模式专有能力 |
+| 3 | **`bottom` 自实现** | 目前 `bottom` 形态用 **better-sidebar 过渡桥**；自实现后即可**完全移除**第三方依赖（路线图第 4 步）| 需先确认官方 `dsh-client-ui-layout` 的下方面板槽位 |
+| 4 | **其余插件接入** | `js-ble-tool` / `ble-tool` 等尚未迁移（其 `inject` 里仍含 `betterSidebar`）| 同三个插件的做法：整体重写 `apply` |
+| 5 | **`force` 短路的可观测性** | 已补派发留痕（`生命周期派发：… ⇒ 不动作`）✅ | 已解决 |
+
+### 迁移新插件时的固定顺序（血泪教训，勿搬移）
+
+```
+① tabOptions（纯数据，最先构造）
+② let viaAdapter = false（声明必须先于任何引用）
+③ waitService(ctx, 'shinkiViews', …)  ← 新模式；不得放进定时器
+④ waitService(ctx, 'betterSidebar', sb => setTimeout(() => { if (viaAdapter) return; sb.registerTab(tabOptions); }, 1500))
+```
+> `node --check` **查不出**作用域/时序错误（实践中有三轮教训：`tabOptions is not defined`、`viaAdapter` TDZ、
+> 新模式块被塞进 `setTimeout`）。因此：**整体重写 `apply`**、改完做**位置序核对**，不要外科式搬移代码块。
+> 另：`bottom` 形态必须 `waitFor(betterSidebar)`（否则早注册的消费方 Tab 会消失 —— 实测 svn-graph）。
