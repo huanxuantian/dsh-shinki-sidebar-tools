@@ -347,3 +347,25 @@ node tools/smoke-client.mjs <pkg>/lib/client.js [更多 client.js ...]
 - 中间件注册视图时**不传 `guide`**；
 - "类型已注册但未打开"的视图，进入路径走**我们自己的 `≡ → 可创建`**（动态清单，已可用）；
 - 若要重新支持 `+` 指南，须**先读官方 `SidebarRightGuideEntry` 的精确类型/实现**再动手，不可照搬字段名。
+
+## 下方视图的探索结论与 C1 决策（重要，勿重复踩坑）
+
+需求："串口/蓝牙等工具以**下方**为主要视图"（右侧栏太窄不便观测）。
+
+### 已评估的官方途径
+
+| 途径 | 结论 |
+|---|---|
+| `dock.drop.bottom`（官方侧边栏）| 语义是 **"下分栏"** —— 把**右侧栏内部**拆成上下两格，**仍是右侧栏** ⇒ 解决不了"太窄"的问题 ❌ |
+| `conversation.composer.dock`（"Ambient entries below the composer card"，`list`/`session`）| 渲染方式是 `renderSlot('conversation.composer.dock', {})` ⇒ **不给任何 props**，期待"空 props 也能自渲染"的**小条目**（如官方 `TodoDock`/`QueueDock`）。把**整面板组件**（串口监控等，按 better-sidebar 的 `ctx/store/scope/tab/visible` 写的）直接塞入 ⇒ 抛错 ⇒ **整个会话区渲染崩溃**（实测）❌ |
+| `conversation.input.dock` | 官方 `TodoPanel`/`QueueDock` 的实际落点；同样是"小条目"语义 ⚠️ |
+
+### C1 决策（用户选定）
+
+**不碰官方槽位**：工具视图继续通过 **官方右侧栏**（`sidebarRightTabs` + `slots('sidebar.right.pane.tab')`）与 **`≡ → 可创建`** 进入。
+- ✅ 已验证可用、零第三方、会话区不受影响；
+- 自绘"应用底部大面板"方案**已废弃并删除代码**（浮层+预留空间的近似方案观感与官方/better-sidebar 差异大，用户判定不可用）。
+
+### 若将来仍要"底部"
+
+只能走 **适配器包装 + React 错误边界 + 一次只加一个视图** 的谨慎路径（单个视图崩溃不得牵连会话区），且必须先读该槽位官方消费者的实现。
