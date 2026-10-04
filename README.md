@@ -313,6 +313,12 @@ node tools/smoke-client.mjs <pkg>/lib/client.js [更多 client.js ...]
 
 ## `bottom` 自实现的关键线索（已侦察，勿丢）
 
+> **更正（重要）**：`@deepseek-ai/dsh-client-ui-dockkit` 经复核是**类型词汇表包**（目录为空、仅被
+> `import type` 引用）—— 它**不是**运行时服务，不能用来挂面板。真正实现停靠的是
+> **`@deepseek-ai/dsh-client-ui-sidebar-right`**（内部有 `dock`/`docked`/`dockPaneIds`/
+> `activeDockPaneId`/`dockFloat` 实现，对外暴露 `openTab`/`openTabIn`/`openWithPaneFocus`/`dockFloat`）。
+> 因此 `bottom` 自实现的目标是 **`ctx.sidebarRight` 的 pane/dock API**。
+
 目标是让 `targets: ['bottom']` **不再经过 better-sidebar 过渡桥**，从而彻底移除第三方依赖。
 
 ### 官方正主：`@deepseek-ai/dsh-client-ui-dockkit`
