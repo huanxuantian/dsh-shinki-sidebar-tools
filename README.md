@@ -316,6 +316,25 @@ node tools/smoke-client.mjs <pkg>/lib/client.js [更多 client.js ...]
 `Audio` / `MutationObserver` 等，加载 bundle（`factory(require)`）并调用 `apply(桩 ctx)`，
 同时捕获 `effect` 回调抛错 ⇒ 覆盖"能加载"与"能激活"两件事。
 
+契约/行为回归测试 `tools/verify-props-contract.mjs`（163 项断言：props 契约、按会话状态、两轴滚动兜底、
+拖拽热区、层次、纯 CSS 尺寸契约、渲染错误边界）：
+
+```bash
+node tools/verify-props-contract.mjs [<pkg>/lib/client.js]
+```
+
+### 部署：不要依赖 pnpm 的链接布局
+
+pnpm 会把源码**硬链接**进 `.pnpm` store，并让 `node_modules/<pkg>` 指向它 ⇒ 源码 / 安装源 / 运行时
+实际是**同一份文件**，排查时极易误判"改的到底是哪一份"。要三处各自独立（inode 不同、nlink=1）：
+
+```bash
+python3 tools/deploy-independent.py            # 干跑：报告现状 + 三处 md5
+python3 tools/deploy-independent.py --apply    # 从源码整树复制（含把运行时符号链接换成真实目录）
+```
+
+注意：再次 `pnpm install` 后 pnpm 会重建自己的链接布局；需要独立副本时重跑本脚本。
+
 ### 另外两条硬性约定（血泪）
 
 1. **不要用脚本自动抽取/搬移代码块**（尤其 options 对象）—— 抽取边界极易偏移而产生"语法合法但语义错"的代码；
