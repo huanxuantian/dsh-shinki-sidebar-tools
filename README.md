@@ -130,9 +130,21 @@ const handle = ctx.shinkiViews.register({
 |---|---|
 | `container` | 承载容器（形态决定尺寸/位置）|
 | `form` | 当前形态：`'bottom' \| 'mainView' \| 'popup'` |
-| `close()` | 请求关闭/收起当前形态（弹窗=关窗，主视图=切回）|
-| `setTitle(t)` | 动态改标题 |
+| `close()` | 请求关闭/收起当前形态：底部栏=收起面板（视图保持挂载）；弹窗=关窗；官方槽位（右栏/主视图）的开关由宿主掌管，本层只告警 |
+| `setTitle(t)` | 动态改标题：底部栏 TAB 条 / ≡ 菜单即时生效；官方右栏已打开的 tab 标题由宿主在 openTab 时捕获，需重开该 tab |
 | `isDetached` | 是否运行在独立窗口（弹窗形态为 true，跨窗口通信走 `BroadcastChannel`）|
+
+**字段覆盖矩阵**（上面五个字段在**任何**形态都拿得到；官方槽位缺的那几个由适配层补齐）：
+
+| 承载 | container | form | close() | setTitle() | isDetached | 官方 kit |
+|---|---|---|---|---|---|---|
+| 底部栏（自绘面板）| 面板内容容器 DOM | `'bottom'` | ✅ 收起面板 | ✅ | `false` | — |
+| 右栏 tab（sidebar.right.pane.tab）| 真实 DOM 节点（portal 目标，首帧可用）| `'bottom'` | ⚠️ 宿主掌管 | ✅（同上）| `false` | `sessionId`、`useTabInfo` 等原样透传 |
+| 主视图（conversation.view）| 同上 | `'mainView'` | ⚠️ 宿主掌管 | ✅ | `false` | `inspectCall`/`openView`/`viewRequest`/`completeViewRequest` + kit |
+| 弹窗 / 面板内全屏 | 承载 host DOM | `'popup'` | ✅ 关窗 | ✅ | `true` | — |
+
+> 注意：消费方若按 better-sidebar 口径取 `props.store` / `props.scope` / `props.tab` / `props.visible`，
+> 这些**不在**本契约里（官方 kit 用的是 `useStore` / `sessionId` / `useTabInfo`），请改用契约字段。
 
 ### 适配层内部：形态 → 实现（按优先级探测）
 
