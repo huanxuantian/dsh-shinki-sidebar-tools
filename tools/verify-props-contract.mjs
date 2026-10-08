@@ -771,6 +771,17 @@ console.log('\n=== R. 迷你 / 悬停窗口（mini 形态） ===');
       if (mini.style.display === 'none') svc.openMini('mini-probe');   // 收尾复原
     }
   }
+  // 会话隔离：迷你窗的显示配置同样是「按会话」的
+  svc.openMini('mini-probe');
+  ok(mini.style.display !== 'none', '准备：迷你窗在会话 A 可见');
+  setSession('sess-B');
+  flushTimersAt(1200);   // 会话切换在实现里有 1s 轮询兜底；桩环境要手动推进定时器
+  ok(mini.style.display === 'none', '★★ 切到没记录的会话 B ⇒ 迷你窗不继承 A 的位置/透明度（与底部栏"新会话默认收起"一致）', mini.style.display);
+  setSession('sess-A');
+  flushTimersAt(1200);
+  ok(mini.style.display !== 'none', '★★ 切回 A ⇒ 迷你窗按 A 的记录恢复显示', mini.style.display);
+  ok(mini.style.left !== 'auto', '★★ 切回 A ⇒ 位置恢复', mini.style.left + ',' + mini.style.top);
+  ok(Math.abs(Number(mini.style.opacity) - 0.5) < 0.03, '★★ 切回 A ⇒ 透明度恢复', mini.style.opacity);
 }
 
 console.log('\n' + (failed ? `❌ 失败 ${failed} 项` : '✅ 全部通过'));
