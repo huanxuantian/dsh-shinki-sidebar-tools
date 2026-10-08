@@ -753,6 +753,24 @@ console.log('\n=== R. 迷你 / 悬停窗口（mini 形态） ===');
   ok(mini.style.display !== 'none', '★★ openMini() 重新显示', mini.style.display);
   ok(mini.style.left !== 'auto', '★ 重新显示后位置保持（持久化生效）', mini.style.left + ',' + mini.style.top);
   ok(code.includes('MINI.el.remove'), '★★ 卸载/热重载时清理迷你窗口（否则 HMR 后会残留出第二个浮窗）');
+  // 入口：底部栏「＋」下拉里应有"迷你 / 悬停视图"分组，点条目可开关
+  const plus2 = walkFind(panel, (el) => el.dataset && el.dataset.addBtn === '1');
+  if (plus2) {
+    try { (plus2.__listeners.click || []).forEach((f) => f({ stopPropagation() {} })); } catch (e) { ok(false, '点＋抛错：' + e.message); }
+    tick();
+    const addMenu = findIn(body, 'shinki-bp-addmenu');
+    // 注意：底部视图条目也叫「迷你探针」——迷你条目带 ✓/🪟 前缀，必须按前缀精确匹配
+    const miniItem = (addMenu && addMenu.children || []).find((c) => /^[✓🪟]/.test(String(c.textContent || '')) && /迷你探针/.test(String(c.textContent || '')) && c.__listeners && c.__listeners.click);
+    ok(!!miniItem, '★★「＋」下拉里有迷你视图入口', addMenu ? addMenu.children.map((c) => c.textContent) : null);
+    console.log('    [dbg] body 里 shinki-bp-addmenu 数量=' + (body.children || []).filter((c) => c.id === 'shinki-bp-addmenu').length + ' 迷你窗数=' + (body.children || []).filter((c) => c.id === 'shinki-tools-mini').length);
+    if (miniItem) {
+      const before = mini.style.display;
+      try { (miniItem.__listeners.click || []).forEach((f) => f({ stopPropagation() {} })); } catch (e) { ok(false, '点迷你条目抛错：' + e.message); }
+      ok(mini.style.display !== before, '★★ 点该条目即开/关迷你窗口（' + before + ' → ' + mini.style.display + '）');
+
+      if (mini.style.display === 'none') svc.openMini('mini-probe');   // 收尾复原
+    }
+  }
 }
 
 console.log('\n' + (failed ? `❌ 失败 ${failed} 项` : '✅ 全部通过'));
