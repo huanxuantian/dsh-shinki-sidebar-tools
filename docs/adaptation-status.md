@@ -40,7 +40,12 @@
 - **前置条件**：原先唯一**硬依赖**它的 `dsh-can-tool`（`inject: ['locale','betterSidebar']` + `ctx.betterSidebar.registerTab`）
   已迁移到本适配层（§2 最后一行），所以停用后**不再有插件 pending**。
 - **回退**：把那行的 `disabled` 改回 `false`，或从 `.bak-20261008-2350` 恢复 `package.json`。
-- **生效**：改的是宿主插件图 ⇒ 必须**重启 dsh**（刷新页面不够）。重启后 boot 载荷里不应再出现 `dsh-better-sidebar/client.js`。
+- **生效**：改的是宿主插件图 ⇒ 必须**重启 dsh**（刷新页面不够）。
+- **重启后运行时报验（2026-10-09 00:00 重启，已通过）**：
+  ① `dsh --profile shinki-desktop --dump-config` 里该行为 `- id: better-sidebar` + `disabled: true`（"patched by …/cordis.patch.yml"）；
+  ② 页面 boot 载荷的客户端插件清单 **78 项**、其中**不再有** `dsh-better-sidebar/client.js`，本插件与 `dsh-can-tool` 均在；
+  ③ 宿主 stdout/stderr 无 `disabling profile plugin row` / `pending` / 报错；
+  ④ 服务端下发的 can-tool 产物内含 `shinkiViews` 与新日志串（证明跑的是迁移版）。
 
 ## 1. 形态支持矩阵（实际实现，非计划）
 
