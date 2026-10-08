@@ -55,7 +55,7 @@
 | 官方右栏（`sidebarRightTabs` + `sidebar.right.pane.tab`） | 官方 seat 承载：`slotHostView` = portal + **真实 `container`（首帧可用）** + `close/setTitle/isDetached` + 错误边界；`overflow:auto` 承接视图溢出 | 官方「+」/ ≡ →可创建 / 打开视图的右栏路径 | ✅ 6 个插件在用 |
 | `mainView` | 官方 `conversation.view` 槽位注册（与「对话/轨迹」同级），`slots.register(options, Component)` 第二参数传组件 | 官方视图切换器 | ✅ 已注册（music 在用） |
 | `popup` | 默认**面板内全屏承载**（自绘标题栏 + ✕ + Esc，含滚轮兜底）；`openPopupWindow()` 真窗口仅保留 | ≡ →独立弹窗 / `openPopup(id)` | ✅ 已验证；真窗口在本宿主 QtWebEngine 下不可靠（会被当成本页导航） |
-| `mini`（v3，悬停/迷你窗口）| **自绘浮窗**：`<body>` 下 `position:fixed`、`z-index:9000`（高于底部栏 100、低于菜单/FAB）、独立 React root + 错误边界；三档规格 **最大 240×240 / 400×400 / 500×500**，**默认 240×80 紧凑条、锚右下角**（right 12 / bottom 44，避开本插件 FAB）；hover 显控制条（握把 + 三档 + ▭ 紧凑 + 透明度滑块 + ⇄ 切换 + ✕）；可拖动（pointer/mouse，四边夹取）| ≡ 菜单「迷你 / 悬停视图」/ 底部栏 `＋` 下拉 / `openMini(id)` / `toggleMini(id)` | ✅ 197 项回归含 30 项 mini 断言 |
+| `mini`（v3，悬停/迷你窗口；**首个消费方 = `dsh-shinki-music`**，2026-10-09）| **自绘浮窗**：`<body>` 下 `position:fixed`、`z-index:9000`（高于底部栏 100、低于菜单/FAB）、独立 React root + 错误边界；三档规格 **最大 240×240 / 400×400 / 500×500**，**默认 240×80 紧凑条、锚右下角**（right 12 / bottom 44，避开本插件 FAB）；hover 显控制条（握把 + 三档 + ▭ 紧凑 + 透明度滑块 + ⇄ 切换 + ✕）；可拖动（pointer/mouse，四边夹取）| ≡ 菜单「迷你 / 悬停视图」/ 底部栏 `＋` 下拉 / `openMini(id)` / `toggleMini(id)` | ✅ 197 项回归含 30 项 mini 断言 |
 
 > ⚠️ **`right` 不是形态名**：`VIEW_FORMS` 实际只有 `popup / bottom / mainView`。
 > 消费方写的 `targets:['bottom','right']` 里那个 `right` 会被记一条「未知形态已跳过」，
@@ -65,7 +65,7 @@
 
 | 插件 | 视图数 | targets | background | 依赖的 props（实测读法） | 状态 |
 |---|---|---|---|---|---|
-| `dsh-shinki-music` | 1 | `popup, mainView` | `force` | `background` + 生命周期；右栏由它自己注册 | ✅ |
+| `dsh-shinki-music` | 1 | `popup, mainView`（+ `mini` 自动纳入）| `force` | `background` + 生命周期；右栏由它自己注册；**另有独立迷你实现 `MiniBody`**（播放控制 + 曲目名跑马灯，`defaultVisible:true`）| ✅ |
 | `dsh-shinki-git-graph` | 1 | `bottom, right` | `pause` | `store.getPrefs/setPrefs/get/set/subscribe`、`scope.sessionId/cwd`、`visible` | ✅ |
 | `dsh-shinki-serial-monitor` | 2 | `bottom, right` / `bottom` | `pause` | `store.update(tab.id,{meta})`、`tab.meta`、`visible` | ✅ |
 | `dsh-shinki-svn-graph` | 1 | `bottom, right` | `pause` | `scope.sessionId`、`store.getPrefs/setPrefs` | ✅ |
@@ -133,6 +133,8 @@
 | 5 | `mainView` 的 `close()` | 官方视图切换器由宿主掌管，本层只能告警 |
 | 6 | 视图内部状态不按会话隔离 | 见 §4；消费方按 `scope.sessionId` 自行分桶即可 |
 | 7 | `popup` 真独立窗口 | 本宿主 QtWebEngine 下 `window.open` 会被当成本页导航 ⇒ 默认走"面板内全屏承载" |
+| 8 | 迷你窗紧凑条（240×80）悬停时，适配层 22px 控件条会**盖住**曲目名一行 | 80px 高度放不下"让位"；如需改为悬停时临时收缩标题行可再做（当前为刻意取舍：绝不溢出） |
+| 9 | 三档真实像素需**目视**确认 | 无头环境（无 react-dom/jsdom 布局）只能做"高度预算 + 无 overflow:auto/scroll"的可证明约束断言；请在 GUI 里逐档看一眼 |
 
 ## 7. 验证与部署（护栏）
 
