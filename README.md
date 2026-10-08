@@ -51,8 +51,8 @@ DSH 右侧边栏增强（纯客户端、零注入）：
 
 > **进度（2026-10-06）**：第 1–5 步均已完成 —— 能力自足（横向滚动 / ≡ 全部视图 / 菜单边界自适应）、
 > `bottom` 自实现、打开路径官方优先、6 个插件全部切到一句声明且无功能缺失。
-> 注意：`dsh-better-sidebar 0.24.1` **仍在运行**（旧手工行的 disable 无效）⇒ 上述回归是在「**它同时存在**」的条件下取得的，
-> 这反而是更强的结论。详见 [`docs/adaptation-status.md`](docs/adaptation-status.md) §0。
+> 当时 `dsh-better-sidebar 0.24.1` 仍在运行（旧手工行的 disable 无效）⇒ 上述回归是在「**它同时存在**」的条件下取得的；
+> 该插件已于 2026-10-08 停用（见 [`docs/adaptation-status.md`](docs/adaptation-status.md) §0.2）。
 
 ### 现状（已具备的基础）
 
@@ -117,7 +117,7 @@ DSH 右侧边栏增强（纯客户端、零注入）：
 | 问题 | 由本层吸收 |
 |---|---|
 | DSH 破坏性更新 / 新特性（槽位改名、API 换签名、新增形态）| 只改**本插件一处**，已接入的插件**零改动** |
-| 上游 `dsh-better-sidebar` 跟不上官方，或自身引入破坏性改动 | 本插件**优先官方实现**：右栏/底部/主视图/弹窗**都不再经过第三方**（`registerTab` 过渡桥已移除），仅「打开视图」的最后兜底分支保留第三方方法名探测；它在本 profile **仍在运行**，而本插件的四种形态照常工作（回归条件即「它同时存在」）|
+| 上游 `dsh-better-sidebar` 跟不上官方，或自身引入破坏性改动 | 本插件**优先官方实现**：右栏/底部/主视图/弹窗**都不再经过第三方**（`registerTab` 过渡桥已移除），仅「打开视图」的最后兜底分支保留第三方方法名探测；它已在本 profile 停用（2026-10-08），停用前后本插件四种形态均照常工作 |
 | 每个插件各自对接多个视图形态，重复且易踩坑 | 统一契约 + 统一降级策略，接入成本降到一句声明 |
 | 官方扩展点尚未稳定 | 能力探测 + 降级链，**缺失只是少一个形态，不阻塞插件激活** |
 
@@ -157,7 +157,7 @@ const handle = ctx.shinkiViews.register({
 
 > **better-sidebar 口径的 props 也已由本层合成注入**：`visible`（恒 true，消费方靠它开轮询）、
 > `scope`（`{sessionId, cwd}`）、`tab`（`{id,type,title,meta}`）、`store`（`get/set/getPrefs/setPrefs/update/updateTab/subscribe/getSnapshot`）。
-> 6 个消费方都是从 better-sidebar 迁来的，实际读的就是这套（例：`store.updateTab(tab.id,{meta})` 存每视图设置）。
+> 7 个消费方都是从 better-sidebar 迁来的（最后一个 `dsh-can-tool` 于 2026-10-08 迁完），实际读的就是这套（例：`store.updateTab(tab.id,{meta})` 存每视图设置）。
 > 其中 `tab.meta` 与 `store.get/set` 落在**按会话状态**里，`store.getPrefs/setPrefs` 为全局；
 > 右栏/主视图路径上官方 slot 的 kit（`useStore`/`sessionId`/`useTabInfo`）仍原样透传。
 
@@ -187,20 +187,21 @@ const handle = ctx.shinkiViews.register({
 5. 消费方逐个切换为"一句声明"（首个：`dsh-shinki-music`），完成后再评估是否彻底移除过渡桥。
 
 > **进度（2026-10-06）**：5 步全部执行完毕 —— `bottom` 已自绘实现且**过渡桥已移除**；`popup`/`mainView` 已落地；
-> 6 个消费方（8 个视图）全部切到一句声明；回归是在 `dsh-better-sidebar` **同时运行**的条件下通过的。
+> 7 个消费方（9 个视图，含最后完成迁移的 `dsh-can-tool`）全部切到一句声明；回归先在 `dsh-better-sidebar` 同时运行时通过，随后它被停用。
 
 ## 实现进度（适配层）
 
 **现状快照见 [`docs/adaptation-status.md`](docs/adaptation-status.md)** —— 形态 × 实现 × 入口 × 状态、
-6 个消费方 / 8 个视图的适配矩阵、props 契约、按会话状态、关键不变量、待办，都在那一份里。
+7 个消费方 / 9 个视图的适配矩阵、props 契约、按会话状态、关键不变量、待办，都在那一份里。
 
 一句话：四种承载（**底部自绘面板 / 官方右栏 seat / `conversation.view` / 弹窗·面板内全屏**）均已落地并实测通过；
-6 个消费方（music、git-graph、serial-monitor、svn-graph、js-ble-tool、ble-tool）全部走「一句声明」。
+7 个消费方（music、git-graph、serial-monitor、svn-graph、js-ble-tool、ble-tool、can-tool）全部走「一句声明」。
 
-> ⚠️ **`dsh-better-sidebar 0.24.1` 在本 profile 仍在运行**（bundle 通道挂载；`cordis.patch.yml` 里那条
-> `web-ui-better-sidebar` 的 `disabled` 是旧手工挂载行、id 不同 ⇒ 禁不掉它）。因此界面上会**同时存在两套底部栏**
-> —— 本插件的 `#shinki-tools-panel` 与它的底部工作台 `[data-dsh-bottom-panel]`；本插件的四种形态都不经过它。
-> 判定归属与「真要关掉它」的正确做法见 [`docs/adaptation-status.md`](docs/adaptation-status.md) §0 / §0.1。
+> ⚠️ **`dsh-better-sidebar 0.24.1` 已于 2026-10-08 按用户要求停用挂载**（`dsh.profile.bundles` 摘除 +
+> `cordis.patch.yml` 按**正确 id** `better-sidebar` 的禁用行 —— 旧写法 `web-ui-better-sidebar` 是历史手工挂载行、id 不同 ⇒ 禁不掉它）。
+> 停用前它与本插件并存「两套底部栏」（本插件 `#shinki-tools-panel` vs 它的 `[data-dsh-bottom-panel]`）；
+> 因它原先的硬依赖方 `dsh-can-tool` 已迁移到本适配层，停用后无插件 pending。依据/做法/回退见
+> [`docs/adaptation-status.md`](docs/adaptation-status.md) §0.2。
 
 ### 经验记录（避免重复踩坑）
 

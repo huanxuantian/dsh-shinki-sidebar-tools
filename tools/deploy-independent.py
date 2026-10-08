@@ -33,7 +33,7 @@ import sys
 
 APP_DEFAULT = '/Users/huanxuantian/work/AI/new-claude-app'
 PROFILE_DEFAULT = os.path.join(APP_DEFAULT, 'data/dsh/profiles/shinki-desktop')
-PKG = 'dsh-shinki-sidebar-tools'
+PKG_DEFAULT = 'dsh-shinki-sidebar-tools'
 SKIP = {'.git', '.DS_Store', 'node_modules', '__pycache__'}
 IGNORE = shutil.ignore_patterns(*SKIP)
 
@@ -46,30 +46,34 @@ def md5(path: str) -> str | None:
         return None
 
 
-def store_dirs(profile: str) -> list[str]:
+def store_dirs(profile: str, pkg: str) -> list[str]:
     """`.pnpm/dsh-shinki-sidebar-tools@<hash>/node_modules/dsh-shinki-sidebar-tools`（hash 不写死）。"""
     pnpm = os.path.join(profile, 'node_modules', '.pnpm')
     if not os.path.isdir(pnpm):
         return []
     return sorted(
-        os.path.join(pnpm, name, 'node_modules', PKG)
+        os.path.join(pnpm, name, 'node_modules', pkg)
         for name in os.listdir(pnpm)
-        if name.startswith(PKG + '@') and os.path.isdir(os.path.join(pnpm, name, 'node_modules', PKG))
+        if name.startswith(pkg + '@') and os.path.isdir(os.path.join(pnpm, name, 'node_modules', pkg))
     )
 
 
 def main() -> int:
     ap = argparse.ArgumentParser(description='把插件以独立实体副本部署到安装源与运行时')
     ap.add_argument('--app', default=APP_DEFAULT)
+    ap.add_argument('--pkg', default=PKG_DEFAULT, help='要部署的包名（默认本插件；也可用于 dsh-can-tool 等 file: 安装的插件）')
     ap.add_argument('--web', default=None)
     ap.add_argument('--profile', default=PROFILE_DEFAULT)
     ap.add_argument('--apply', action='store_true', help='真正执行（默认只报告）')
     args = ap.parse_args()
 
+    pkg = args.pkg
     src = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))       # 本脚本在 tools/ 下
-    web = args.web or os.path.join(args.app, 'plugin', 'web', PKG)
-    run = os.path.join(args.profile, 'node_modules', PKG)
-    targets = [('WEB', web), ('RUN', run)] + [(f'STORE{i or ""}', p) for i, p in enumerate(store_dirs(args.profile))]
+    if pkg != PKG_DEFAULT:                                                   # 其它插件：源码 = plugin/web/<pkg>
+        src = os.path.join(args.app, 'plugin', 'web', pkg)
+    web = args.web or os.path.join(args.app, 'plugin', 'web', pkg)
+    run = os.path.join(args.profile, 'node_modules', pkg)
+    targets = [('WEB', web), ('RUN', run)] + [(f'STORE{i or ""}', p) for i, p in enumerate(store_dirs(args.profile, pkg))]
 
     src_client = os.path.join(src, 'lib', 'client.js')
     print(f'源码   {src}')
@@ -84,8 +88,11 @@ def main() -> int:
 
     want = md5(src_client)
     for name, path in targets:
+        if os.path.realpath(path) == os.path.realpath(src):
+            print(f'跳过 {name}（它本身就是源码目录，无需自拷）')
+            continue
         real = os.path.realpath(path)
-        if os.path.basename(real) != PKG:
+        if os.path.basename(real) != pkg:
             print(f'拒绝操作：{path} 解析后不是 {PKG} 目录', file=sys.stderr)
             return 2
         if os.path.islink(path):
@@ -96,6 +103,7 @@ def main() -> int:
         print(f'已部署 {name} -> {path}')
 
     print('\n=== 校验 ===')
+    same_as_src = {os.path.realpath(p) for _, p in targets}   # WEB 在 --pkg 模式下就是源码目录本身
     inodes: dict[int, list[str]] = {}
     ok = True
     for name, path in [('SRC', src)] + targets:
@@ -105,8 +113,9 @@ def main() -> int:
         good = (md5(f) == want and st.st_nlink == 1)
         ok = ok and good
         print('  %-7s md5=%s inode=%s nlink=%s %s' % (name, md5(f), st.st_ino, st.st_nlink, '' if good else '✗ 与源码不一致或仍是硬链接'))
-    shared = {k: v for k, v in inodes.items() if len(v) > 1}
-    print('  共享 inode 的分组：', shared or '无（各自独立）')
+    # SRC 与 WEB 在 --pkg 模式下是同一个目录（同一 inode 属正常），不算"共享"
+    shared = {k: v for k, v in inodes.items() if len(v) > 1 and not (len(v) == 2 and set(v) == {'SRC', 'WEB'} and os.path.realpath(src) in same_as_src)}
+    print('  共享 inode 的分组：', shared or '无（各自独立；SRC=WEB 时二者本就是同一目录）')
     print('  运行时是符号链接吗：', os.path.islink(run))
     print('\n' + ('✅ 完成：均为独立实体副本，内容与源码一致' if ok and not shared else '❌ 校验未通过'))
     return 0 if ok and not shared else 1

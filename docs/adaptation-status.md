@@ -10,10 +10,10 @@
 |---|---|
 | profile | `data/dsh/profiles/shinki-desktop`（bundles 含本插件与全部消费方） |
 | 官方侧 | `@deepseek-ai/dsh-base` / `dsh-web-app` / `@linxin666/dsh-web-all` |
-| 第三方 | `dsh-better-sidebar 0.24.1` —— **已安装且正在运行**。⚠️ `cordis.patch.yml` 里那条 `- id: web-ui-better-sidebar / name: dsh-better-sidebar / disabled: true` 是**旧的手工挂载行**，它的 id 与实际挂载行（bundle 通道 `id: better-sidebar`）**不同** ⇒ 禁不掉它；运行时 boot 载荷的 bundle 清单里确实含 `dsh-better-sidebar/client.js`。profile 的 `//dsh-0.2.0-compat` 注释表明这是**有意**钉到 0.24.1（它提供 `betterSidebar` 服务） |
+| 第三方 | `dsh-better-sidebar 0.24.1` —— 已安装，**已于 2026-10-08 按用户要求停用挂载**（`dsh.profile.bundles` 摘除 + `cordis.patch.yml` 按**正确 id** 的禁用行；详见 §0.2）。停用前它确实在运行（boot 载荷含 `dsh-better-sidebar/client.js`），与本插件并存「两套底部栏」；因它的底部工作台没有「只关面板」的配置项，只能整体停用 |
 | 本插件安装 | profile 用 `file:…/plugin/web/dsh-shinki-sidebar-tools`；pnpm 默认**硬链接**进 `.pnpm` store 并让 `node_modules/<pkg>` 指向它 ⇒ 需独立副本时用 `tools/deploy-independent.py` |
 
-### 0.1 现场如何区分「两套底部栏」
+### 0.1 「两套底部栏」如何区分（停用前的现场记录；回退后仍适用）
 
 界面上会同时存在两套底部栏（本插件的 + better-sidebar 的），按下表即可判定归属：
 
@@ -29,9 +29,18 @@
 > ② 输入框下方的官方小条目 dock —— `conversation.composer.dock` / `conversation.input.dock`
 > （Todo / Goal / 队列 / cordis runner 等，来自 `dsh-client-ui-chat`、`dsh-client-ui-conversation`、`dsh-cordis-client-runner`）。
 
-> 若将来真要关掉 better-sidebar 的底部工作台：删掉 profile `package.json` 里 `dsh.profile.bundles` 的 `dsh-better-sidebar`，
-> 或在 `cordis.patch.yml` 里按**正确的 id** 加一行禁用（`- id: better-sidebar` + `disabled: true`）——
-> 仅禁用 `web-ui-better-sidebar` 那条旧手工行是无效的。注意：本插件 6 个消费方的激活**不再依赖**它。
+### 0.2 停用依据、做法与回退（2026-10-08）
+
+- **依据**：停用前实测 boot 载荷的 bundle 清单里同时含 `dsh-shinki-sidebar-tools/client.js` 与 `dsh-better-sidebar/client.js`；
+  `cordis.patch.yml` 里的旧行用的是 `web-ui-better-sidebar`（历史手工挂载 id），而实际挂载行来自 bundle 通道、id 为 `better-sidebar`
+  ⇒ 旧行的 disable **打空**（这就是"两套底部栏"的来源）。
+- **做法**：`package.json` 的 `dsh.profile.bundles` 摘除 `dsh-better-sidebar`（`dependencies` 保留，便于回退）；
+  `cordis.patch.yml` 删除旧行、换成 `- id: better-sidebar` + `name: dsh-better-sidebar` + `disabled: true`。
+  两文件都留了 `*.bak-20261008-2350` 备份，改完经 JSON / YAML 解析校验。
+- **前置条件**：原先唯一**硬依赖**它的 `dsh-can-tool`（`inject: ['locale','betterSidebar']` + `ctx.betterSidebar.registerTab`）
+  已迁移到本适配层（§2 最后一行），所以停用后**不再有插件 pending**。
+- **回退**：把那行的 `disabled` 改回 `false`，或从 `.bak-20261008-2350` 恢复 `package.json`。
+- **生效**：改的是宿主插件图 ⇒ 必须**重启 dsh**（刷新页面不够）。重启后 boot 载荷里不应再出现 `dsh-better-sidebar/client.js`。
 
 ## 1. 形态支持矩阵（实际实现，非计划）
 
@@ -46,7 +55,7 @@
 > 消费方写的 `targets:['bottom','right']` 里那个 `right` 会被记一条「未知形态已跳过」，
 > **右栏入口实际是 `bottom` 形态的实现顺带注册的**。只写 `targets:['right']` 目前拿不到入口 —— 见 §6 #1。
 
-## 2. 消费方适配矩阵（6 个插件 / 8 个视图）
+## 2. 消费方适配矩阵（7 个插件 / 9 个视图）
 
 | 插件 | 视图数 | targets | background | 依赖的 props（实测读法） | 状态 |
 |---|---|---|---|---|---|
@@ -56,10 +65,11 @@
 | `dsh-shinki-svn-graph` | 1 | `bottom, right` | `pause` | `scope.sessionId`、`store.getPrefs/setPrefs` | ✅ |
 | `dsh-shinki-js-ble-tool` | 1 | `bottom, right` | `pause` | **`visible`（记录/状态轮询的闸门）**、`scope`/`tab`/`store` | ✅ |
 | `dsh-shinki-ble-tool` | 2 | `bottom(, right)` / `bottom` | `pause` | `scope`/`tab`/`store`/`visible` | ✅ |
+| `dsh-can-tool` | 1 | `bottom, right` | `pause` | `store`/`tab`/`visible`（组件签名本就是 better-sidebar 口径） | ✅ 2026-10-08 由「硬依赖 better-sidebar」迁移而来 |
 
-> 全部 6 个都是「新模式一句声明 + 老模式 `waitService(ctx,'betterSidebar')` 兜底」。
-> better-sidebar **实际在运行** ⇒ 这条兜底会被装上（它的服务存在），但 `viaAdapter` 一旦为真就提前 `return`
-> ⇒ **不会重复注册**（所以它的工作台里不会出现这些视图的重复 TAB）。
+> 7 个都是「新模式一句声明 + 老模式 `waitService(ctx,'betterSidebar')` 兜底」。
+> better-sidebar 停用前，这条兜底会被装上（服务存在）但被 `viaAdapter` 短路 ⇒ 从不重复注册；
+> **停用后它连服务也没有** ⇒ 兜底分支只会静默超时/跳过。两种情况下行为一致，故这些兜底代码现在属于**可删的死重**（见 §6 #3）。
 
 ## 3. props 契约（本层实际注入，三条承载路径一致）
 
@@ -105,7 +115,7 @@
 |---|---|---|
 | 1 | `targets:['right']` 无效 + 「未知形态已跳过：right」噪音 | 把右栏注册（`sidebarRightTabs.register` + `sidebar.right.pane.tab`）从 `bottom` 实现里抽成共用函数，新增 `VIEW_FORMS.right` 调它；重复注册用 try/catch 吞 `already registered` |
 | 2 | `dsh-shinki-serial-monitor` 老模式残留 | 其内部仍直接读 `ctx.betterSidebar.*`（`updateTab`/`getSnapshot`）⇒ cordis 拒绝属性访问、功能静默降级；建议改 `ctx.get('betterSidebar')` 或直接删除老模式分支 |
-| 3 | 6 个消费方的老模式兜底分支 | 都还留着 `waitService(ctx,'betterSidebar') + setTimeout(1500)`；better-sidebar **当前是启用的**（见 §0），故该兜底会装但被 `viaAdapter` 短路；若决定彻底不用它，可整体删除（省一个定时器与一条日志） |
+| 3 | 7 个消费方的老模式兜底分支 | 都还留着 `waitService(ctx,'betterSidebar') + setTimeout(1500)`；better-sidebar **已于 2026-10-08 停用**（§0.2）⇒ 这些兜底只会静默超时，属**可删的死重**（省一个定时器与一条日志） |
 | 4 | 右栏**已打开** chip 的标题 | `setTitle(t)` 影响不了宿主已捕获的 chip（需重开该 tab）——已在契约里如实说明 |
 | 5 | `mainView` 的 `close()` | 官方视图切换器由宿主掌管，本层只能告警 |
 | 6 | 视图内部状态不按会话隔离 | 见 §4；消费方按 `scope.sessionId` 自行分桶即可 |
