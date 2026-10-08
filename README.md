@@ -50,8 +50,9 @@ DSH 右侧边栏增强（纯客户端、零注入）：
 | 5 | 逐个评估依赖它的插件（music / git-graph / serial-monitor / svn-graph），切换或保留 | 无 `pending`、无功能缺失 |
 
 > **进度（2026-10-06）**：第 1–5 步均已完成 —— 能力自足（横向滚动 / ≡ 全部视图 / 菜单边界自适应）、
-> `bottom` 自实现、打开路径官方优先、profile 中 `dsh-better-sidebar` 已 `disabled: true`、
-> 6 个插件全部切到一句声明且无功能缺失。详见 [`docs/adaptation-status.md`](docs/adaptation-status.md)。
+> `bottom` 自实现、打开路径官方优先、6 个插件全部切到一句声明且无功能缺失。
+> 注意：`dsh-better-sidebar 0.24.1` **仍在运行**（旧手工行的 disable 无效）⇒ 上述回归是在「**它同时存在**」的条件下取得的，
+> 这反而是更强的结论。详见 [`docs/adaptation-status.md`](docs/adaptation-status.md) §0。
 
 ### 现状（已具备的基础）
 
@@ -116,7 +117,7 @@ DSH 右侧边栏增强（纯客户端、零注入）：
 | 问题 | 由本层吸收 |
 |---|---|
 | DSH 破坏性更新 / 新特性（槽位改名、API 换签名、新增形态）| 只改**本插件一处**，已接入的插件**零改动** |
-| 上游 `dsh-better-sidebar` 跟不上官方，或自身引入破坏性改动 | 本插件**优先官方实现**：右栏/底部/主视图/弹窗**都不再经过第三方**（`registerTab` 过渡桥已移除），仅「打开视图」的最后兜底分支保留第三方方法名探测；本 profile 已 `disabled: true` 且回归通过 |
+| 上游 `dsh-better-sidebar` 跟不上官方，或自身引入破坏性改动 | 本插件**优先官方实现**：右栏/底部/主视图/弹窗**都不再经过第三方**（`registerTab` 过渡桥已移除），仅「打开视图」的最后兜底分支保留第三方方法名探测；它在本 profile **仍在运行**，而本插件的四种形态照常工作（回归条件即「它同时存在」）|
 | 每个插件各自对接多个视图形态，重复且易踩坑 | 统一契约 + 统一降级策略，接入成本降到一句声明 |
 | 官方扩展点尚未稳定 | 能力探测 + 降级链，**缺失只是少一个形态，不阻塞插件激活** |
 
@@ -186,7 +187,7 @@ const handle = ctx.shinkiViews.register({
 5. 消费方逐个切换为"一句声明"（首个：`dsh-shinki-music`），完成后再评估是否彻底移除过渡桥。
 
 > **进度（2026-10-06）**：5 步全部执行完毕 —— `bottom` 已自绘实现且**过渡桥已移除**；`popup`/`mainView` 已落地；
-> 6 个消费方（8 个视图）全部切到一句声明；profile 中 `dsh-better-sidebar` 已 `disabled: true` 并回归通过。
+> 6 个消费方（8 个视图）全部切到一句声明；回归是在 `dsh-better-sidebar` **同时运行**的条件下通过的。
 
 ## 实现进度（适配层）
 
@@ -194,8 +195,12 @@ const handle = ctx.shinkiViews.register({
 6 个消费方 / 8 个视图的适配矩阵、props 契约、按会话状态、关键不变量、待办，都在那一份里。
 
 一句话：四种承载（**底部自绘面板 / 官方右栏 seat / `conversation.view` / 弹窗·面板内全屏**）均已落地并实测通过；
-6 个消费方（music、git-graph、serial-monitor、svn-graph、js-ble-tool、ble-tool）全部走"一句声明"；
-本 profile 中 `dsh-better-sidebar` 已 `disabled: true`，全链路不依赖第三方。
+6 个消费方（music、git-graph、serial-monitor、svn-graph、js-ble-tool、ble-tool）全部走「一句声明」。
+
+> ⚠️ **`dsh-better-sidebar 0.24.1` 在本 profile 仍在运行**（bundle 通道挂载；`cordis.patch.yml` 里那条
+> `web-ui-better-sidebar` 的 `disabled` 是旧手工挂载行、id 不同 ⇒ 禁不掉它）。因此界面上会**同时存在两套底部栏**
+> —— 本插件的 `#shinki-tools-panel` 与它的底部工作台 `[data-dsh-bottom-panel]`；本插件的四种形态都不经过它。
+> 判定归属与「真要关掉它」的正确做法见 [`docs/adaptation-status.md`](docs/adaptation-status.md) §0 / §0.1。
 
 ### 经验记录（避免重复踩坑）
 
