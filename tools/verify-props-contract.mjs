@@ -686,7 +686,7 @@ console.log('\n=== R. 迷你 / 悬停窗口（mini 形态） ===');
     id: 'mini-probe', title: '迷你探针', order: 7,
     targets: ['bottom'], background: 'pause',
     render: (p) => { mainProps = p; return { type: 'div', props: {} }; },
-    mini: { render: (p) => { miniProps = p; return { type: 'div', props: {} }; } },   // 独立实现
+    mini: { render: (p) => { miniProps = p; return { type: 'div', props: {} }; }, defaultVisible: true },   // 独立实现 + 显式声明启动即显示
   };
   svc.register(spec);
   ok(svc.forms().includes('mini'), '★ 形态表含 mini', svc.forms().join(','));
@@ -695,7 +695,13 @@ console.log('\n=== R. 迷你 / 悬停窗口（mini 形态） ===');
   try { svc.openMini('mini-probe'); } catch (e) { console.log('    [debug] openMini 抛错：' + e.message); }
   const mini = byId.get('shinki-tools-mini') || findIn(body, 'shinki-tools-mini');
   ok(!!mini, '★ 迷你窗口已创建（#shinki-tools-mini）');
-  ok(!!mini && mini.style.display !== 'none', '★ 默认可见（provider 未声明 defaultVisible:false）', mini && mini.style.display);
+  ok(!!mini && mini.style.display !== 'none', '★ 显式 defaultVisible:true ⇒ 启动即显示（240×80 右下角）', mini && mini.style.display);
+  // ★ 关键语义：**未声明 defaultVisible 的悬停视图默认不显示**（用户 2026-10-09 要求）
+  let miniOffProps = null;
+  svc.register({ id: 'mini-default-off', title: '默认不显示探针', targets: [], mini: { render: (p) => { miniOffProps = p; return { type: 'div', props: {} }; } } });
+  ok(typeof miniOffProps !== 'function', '（默认关闭探针已注册）');
+  ok(svc.miniState('mini-default-off').visible === false, '★★ 未声明 defaultVisible ⇒ 启动时**不显示**（state.visible=false）', svc.miniState('mini-default-off'));
+  ok(mini.style.display !== 'none' && svc.miniState('mini-probe').visible === true, '★ 未声明者不会抢占已显示的悬停窗（仍是 mini-probe）', mini.style.display);
   ok(!!mini && mini.style.width === '240px' && mini.style.height === '80px', '★★ 默认 240×80 紧凑条', mini && (mini.style.width + '×' + mini.style.height));
   ok(!!mini && mini.style.right === '12px' && mini.style.bottom === '44px' && mini.style.left === 'auto', '★★ 默认锚右下角（避开 FAB；未拖动 ⇒ 窗口缩放自动跟随）', mini && (mini.style.right + '/' + mini.style.bottom + ' left=' + mini.style.left));
   ok(!!mini && mini.getAttribute('data-shinki-mini-tier') === 's' && mini.getAttribute('data-shinki-mini-compact') === '1', '★ 默认档位 s + 紧凑态');
@@ -749,6 +755,9 @@ console.log('\n=== R. 迷你 / 悬停窗口（mini 形态） ===');
   click('[data-shinki-mini-close]');
   ok(mini.style.display === 'none', '★ ✕ 关闭迷你窗口', mini.style.display);
   ok(svc.miniables().includes('mini-probe'), '★ 关闭后仍在 miniables（可再打开）');
+  ok(svc.hideMini('mini-probe') === true && mini.style.display === 'none', '★★ hideMini(id) 直接隐藏（位置/透明度保留）', mini.style.display);
+  ok(svc.miniState('mini-probe').visible === false, '★ 隐藏写入 state.visible=false（菜单据此显示"已隐藏"）', svc.miniState('mini-probe'));
+  ok(svc.showMini('mini-probe') === true && mini.style.display !== 'none', '★★ showMini(id) 从菜单再打开', mini.style.display);
   svc.openMini('mini-probe');
   ok(mini.style.display !== 'none', '★★ openMini() 重新显示', mini.style.display);
   ok(mini.style.left !== 'auto', '★ 重新显示后位置保持（持久化生效）', mini.style.left + ',' + mini.style.top);
