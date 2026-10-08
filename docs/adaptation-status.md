@@ -57,9 +57,9 @@
 | `popup` | 默认**面板内全屏承载**（自绘标题栏 + ✕ + Esc，含滚轮兜底）；`openPopupWindow()` 真窗口仅保留 | ≡ →独立弹窗 / `openPopup(id)` | ✅ 已验证；真窗口在本宿主 QtWebEngine 下不可靠（会被当成本页导航） |
 | `mini`（v3，悬停/迷你窗口；**首个消费方 = `dsh-shinki-music`**，2026-10-09）| **自绘浮窗**：`<body>` 下 `position:fixed`、`z-index:9000`（高于底部栏 100、低于菜单/FAB）、独立 React root + 错误边界；三档规格 **最大 240×240 / 400×400 / 500×500**，**默认 240×80 紧凑条、锚右下角**（right 12 / bottom 44，避开本插件 FAB）；hover 显控制条（握把 + 三档 + ▭ 紧凑 + 透明度滑块 + ⇄ 切换 + ✕）；可拖动（pointer/mouse，四边夹取）| ≡ 菜单「迷你 / 悬停视图」/ 底部栏 `＋` 下拉 / `openMini(id)` / `toggleMini(id)` | ✅ **用户实测三档（240×240 / 400×400 / 500×500）与默认 240×80 均通过（2026-10-09）**；205 项回归含 30+ 项 mini 断言 |
 
-> ⚠️ **`right` 不是形态名**：`VIEW_FORMS` 实际只有 `popup / bottom / mainView`。
-> 消费方写的 `targets:['bottom','right']` 里那个 `right` 会被记一条「未知形态已跳过」，
-> **右栏入口实际是 `bottom` 形态的实现顺带注册的**。只写 `targets:['right']` 目前拿不到入口 —— 见 §6 #1。
+> ✅ **`right` 已是正式形态（2026-10-09 补齐）**：与 `bottom` **共用同一段右栏注册**（`registerRightRail`）并按 id 去重，
+> 因此 `targets:['bottom','right']` 只会产生一个 tab，不再有「未知形态已跳过：right」噪音；只写 `targets:['right']` 也能拿到入口。
+> 注意：右栏承载的视图沿用 `form:'bottom'`（与历史行为一致，消费方可能按 form 分支）。
 
 ## 2. 消费方适配矩阵（7 个插件 / 9 个视图）
 
@@ -126,14 +126,14 @@
 
 | # | 事项 | 说明与建议做法 |
 |---|---|---|
-| 1 | `targets:['right']` 无效 + 「未知形态已跳过：right」噪音 | 把右栏注册（`sidebarRightTabs.register` + `sidebar.right.pane.tab`）从 `bottom` 实现里抽成共用函数，新增 `VIEW_FORMS.right` 调它；重复注册用 try/catch 吞 `already registered` |
+| 1 | ~~`targets:['right']` 无效 + 「未知形态已跳过：right」噪音~~ | ✅ 已修（2026-10-09）：抽出 `registerRightRail` + 新增 `VIEW_FORMS.right` + 同 id 去重；回归断言 5 项 |
 | 2 | `dsh-shinki-serial-monitor` 老模式残留 | 其内部仍直接读 `ctx.betterSidebar.*`（`updateTab`/`getSnapshot`）⇒ cordis 拒绝属性访问、功能静默降级；建议改 `ctx.get('betterSidebar')` 或直接删除老模式分支 |
 | 3 | 7 个消费方的老模式兜底分支 | 都还留着 `waitService(ctx,'betterSidebar') + setTimeout(1500)`；better-sidebar **已于 2026-10-08 停用**（§0.2）⇒ 这些兜底只会静默超时，属**可删的死重**（省一个定时器与一条日志） |
 | 4 | 右栏**已打开** chip 的标题 | `setTitle(t)` 影响不了宿主已捕获的 chip（需重开该 tab）——已在契约里如实说明 |
 | 5 | `mainView` 的 `close()` | 官方视图切换器由宿主掌管，本层只能告警 |
 | 6 | 视图内部状态不按会话隔离 | 见 §4；消费方按 `scope.sessionId` 自行分桶即可 |
 | 7 | `popup` 真独立窗口 | 本宿主 QtWebEngine 下 `window.open` 会被当成本页导航 ⇒ 默认走"面板内全屏承载" |
-| 8 | 迷你窗紧凑条（240×80）悬停时，适配层 22px 控件条会**盖住**曲目名一行 | 80px 高度放不下"让位"；如需改为悬停时临时收缩标题行可再做（当前为刻意取舍：绝不溢出） |
+| 8 | ~~迷你窗紧凑条悬停时控件条盖住曲目名~~ | ✅ 已修（2026-10-09）：`dsh-shinki-music` 悬停时顶部内边距 8→22 并**临时收起进度行** ⇒ 标题落在控件条下方，且仍不溢出（已加断言） |
 | 9 | ~~三档真实像素需目视确认~~ | ✅ 已由用户逐档目视确认通过（2026-10-09）：三档 + 紧凑条均不溢出、无滚动条 |
 
 ## 7. 验证与部署（护栏）

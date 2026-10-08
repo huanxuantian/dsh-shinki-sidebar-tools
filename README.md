@@ -175,7 +175,7 @@ const handle = ctx.shinkiViews.register({
 | 形态 | 实现优先级 |
 |---|---|
 | `bottom` | **本插件自绘面板**（挂 `<body>`、`position:fixed`、`z-index:100`；拖拽握把 + TAB 条 + `＋` 下拉 + ✕）；让位 = 会话列 `margin-bottom`；滚动由 CSS `overflow:auto` 按内容高度决定。**已移除** better-sidebar `registerTab` 过渡桥 |
-| 官方右栏（不是形态名，由 `bottom` 实现顺带注册） | `sidebarRightTabs.register` + `slots('sidebar.right.pane.tab')`；承载层 `slotHostView` 提供 portal `container`、`close/setTitle/isDetached` 与渲染错误边界 |
+| 官方右栏 = 形态 **`right`**（2026-10-09 起；与 `bottom` 共用注册、同 id 去重；承载视图沿用 `form:'bottom'`）| `sidebarRightTabs.register` + `slots('sidebar.right.pane.tab')`；承载层 `slotHostView` 提供 portal `container`、`close/setTitle/isDetached` 与渲染错误边界 |
 | `mainView` | 官方 `conversation.view` 槽位：`slots.inject('conversation.view', () => slots.register({name,id,order,label,inject}, Body))`（与「对话/轨迹」同级） |
 | `popup` | 默认**面板内全屏承载**（自绘标题栏 + ✕ + Esc + 滚轮兜底）；真独立窗口 `window.open` 在本宿主不可靠，仅保留 `openPopupWindow()` |
 | `mini`（v3）| **悬停 / 迷你窗口**：`<body>` 下 `position:fixed`（`z-index:9000`，低于菜单/FAB）、独立 React root；三档规格 **最大 240×240 / 400×400 / 500×500**，**默认 240×80 紧凑条锚右下角**（避开本插件 FAB）；hover 才显控制条、可拖动、可调透明度、✕ 关闭；**显示配置（位置/规格/透明度/可见性）与主窗口完全独立**，按「会话 + 视图」存在 `values.mini.byView`；**数据必须与主视图共享**（同一个 `store`，消费方不得复刻第二份状态）。**参考实现**：`dsh-shinki-music` 的 `MiniBody`（播放控制 + 曲目名跑马灯；播放数据上提为模块级 `PLAYER` store，全插件唯一 `<audio>`，主视图与迷你视图共用）|
