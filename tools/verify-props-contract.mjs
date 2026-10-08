@@ -752,6 +752,7 @@ console.log('\n=== R. 迷你 / 悬停窗口（mini 形态） ===');
   svc.openMini('mini-probe');
   ok(mini.style.display !== 'none', '★★ openMini() 重新显示', mini.style.display);
   ok(mini.style.left !== 'auto', '★ 重新显示后位置保持（持久化生效）', mini.style.left + ',' + mini.style.top);
+  ok(code.includes('MINI.el.remove'), '★★ 卸载/热重载时清理迷你窗口（否则 HMR 后会残留出第二个浮窗）');
 }
 
 console.log('\n' + (failed ? `❌ 失败 ${failed} 项` : '✅ 全部通过'));
