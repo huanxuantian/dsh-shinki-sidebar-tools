@@ -55,6 +55,7 @@
 | 官方右栏（`sidebarRightTabs` + `sidebar.right.pane.tab`） | 官方 seat 承载：`slotHostView` = portal + **真实 `container`（首帧可用）** + `close/setTitle/isDetached` + 错误边界；`overflow:auto` 承接视图溢出 | 官方「+」/ ≡ →可创建 / 打开视图的右栏路径 | ✅ 6 个插件在用 |
 | `mainView` | 官方 `conversation.view` 槽位注册（与「对话/轨迹」同级），`slots.register(options, Component)` 第二参数传组件 | 官方视图切换器 | ✅ 已注册（music 在用） |
 | `popup` | 默认**面板内全屏承载**（自绘标题栏 + ✕ + Esc，含滚轮兜底）；`openPopupWindow()` 真窗口仅保留 | ≡ →独立弹窗 / `openPopup(id)` | ✅ 已验证；真窗口在本宿主 QtWebEngine 下不可靠（会被当成本页导航） |
+| `mini`（v3，悬停/迷你窗口）| **自绘浮窗**：`<body>` 下 `position:fixed`、`z-index:9000`（高于底部栏 100、低于菜单/FAB）、独立 React root + 错误边界；三档规格 **最大 240×240 / 400×400 / 500×500**，**默认 240×80 紧凑条、锚右下角**（right 12 / bottom 44，避开本插件 FAB）；hover 显控制条（握把 + 三档 + ▭ 紧凑 + 透明度滑块 + ⇄ 切换 + ✕）；可拖动（pointer/mouse，四边夹取）| ≡ 菜单「迷你 / 悬停视图」/ 底部栏 `＋` 下拉 / `openMini(id)` / `toggleMini(id)` | ✅ 197 项回归含 30 项 mini 断言 |
 
 > ⚠️ **`right` 不是形态名**：`VIEW_FORMS` 实际只有 `popup / bottom / mainView`。
 > 消费方写的 `targets:['bottom','right']` 里那个 `right` 会被记一条「未知形态已跳过」，
@@ -90,6 +91,8 @@
 | `scope` | 同上 | `{ sessionId: <会话 key>, cwd: '' }` |
 | `tab` | 同上 | `{ id: 'shinki:<viewId>', type, title, meta }`，`meta` **按会话**持久化 |
 | `store` | 同上 | `get/set/getPrefs/setPrefs/update/updateTab/subscribe/getSnapshot`；`get/set/updateTab(meta)` 按会话，`prefs` 全局 |
+| `tier` / `compact` / `width` / `height` / `maxWidth` / `maxHeight` | **仅 mini** | 规格档与当前盒子尺寸 —— 消费方的迷你实现**必须按 width/height 自适应**（同一实现要承载 240×80 紧凑条与三档） |
+| `setTier(t)` / `setCompact(b)` / `setOpacity(o)` | **仅 mini** | 消费方也可改规格/紧凑/透明度（等同控制条） |
 
 ## 4. 按会话隔离状态（用户需求：状态跟着对话走）
 
@@ -113,6 +116,11 @@
 5. **面板宿主挂 `<body>`**（避免会话 DOM 里 `transform/contain/filter` 把 `position:fixed` 的包含块劫持走）；`z-index:100`（高于会话内容与其浮动层 60，低于菜单 1100 / 本插件菜单 / FAB）。
 6. **错误边界**：消费方渲染抛错 ⇒ 面板就地显示原因 + 重试，不再整块空白。
 7. 面板按**可见视口**（`innerHeight` / `visualViewport.height` / `documentElement.clientHeight` 取最小非零）定位与限高。
+8. **迷你窗：显示配置独立、数据共享**（用户明确要求）——位置 / 规格档 / 紧凑态 / 透明度 / 可见性存在
+   `values.mini.byView[<视图 id>]`（与底部栏的 `open/height/tabOrder/active` 互不影响，按**会话 + 视图**隔离）；
+   而**播放状态这类业务数据必须与主视图共享同一份**（同一个 `store`；消费方不得在迷你实现里再建一份状态/播放器实例）。
+9. 迷你窗默认**锚右下角**且**避开本插件 FAB**（FAB 在 `right:8/bottom:8`、26×26；迷你默认 `right:12/bottom:44`）；
+   一旦手动拖动即转为 `left/top` 绝对定位并持久化。
 
 ## 6. 待办 / 已知缺口
 
@@ -136,7 +144,7 @@ node --check <pkg>/lib/client.js
 node tools/smoke-client.mjs <pkg>/lib/client.js [更多 client.js ...]
 
 # ③ 契约/行为回归：163 项断言（props / 按会话 / 两轴滚动兜底 / 拖拽热区 / 层次 / 纯 CSS 尺寸 / 错误边界 / 菜单项）
-node tools/verify-props-contract.mjs [<pkg>/lib/client.js]
+node tools/verify-props-contract.mjs [<pkg>/lib/client.js]   # 197 项：含 mini 形态 30 项（默认 240×80/三档/拖动/透明度/独立配置/数据共享/关闭重开）
 
 # ④ 独立副本部署（断开 pnpm 的硬链接与符号链接；默认干跑，--apply 执行并自校验）
 python3 tools/deploy-independent.py [--apply]

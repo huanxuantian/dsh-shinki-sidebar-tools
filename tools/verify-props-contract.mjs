@@ -678,6 +678,82 @@ console.log('\n=== Q. 消费方要的 better-sidebar props ===');
   }
 }
 
+console.log('\n=== R. 迷你 / 悬停窗口（mini 形态） ===');
+{
+  let miniProps = null;
+  let mainProps = null;
+  const spec = {
+    id: 'mini-probe', title: '迷你探针', order: 7,
+    targets: ['bottom'], background: 'pause',
+    render: (p) => { mainProps = p; return { type: 'div', props: {} }; },
+    mini: { render: (p) => { miniProps = p; return { type: 'div', props: {} }; } },   // 独立实现
+  };
+  svc.register(spec);
+  ok(svc.forms().includes('mini'), '★ 形态表含 mini', svc.forms().join(','));
+  ok(svc.miniables().includes('mini-probe'), '★ miniables() 列出它（声明 mini 即自动纳入，无需写 targets）', svc.miniables());
+  console.log('    [debug] body.children=' + JSON.stringify((body.children || []).map((c) => c.id || c.tagName)));
+  try { svc.openMini('mini-probe'); } catch (e) { console.log('    [debug] openMini 抛错：' + e.message); }
+  const mini = byId.get('shinki-tools-mini') || findIn(body, 'shinki-tools-mini');
+  ok(!!mini, '★ 迷你窗口已创建（#shinki-tools-mini）');
+  ok(!!mini && mini.style.display !== 'none', '★ 默认可见（provider 未声明 defaultVisible:false）', mini && mini.style.display);
+  ok(!!mini && mini.style.width === '240px' && mini.style.height === '80px', '★★ 默认 240×80 紧凑条', mini && (mini.style.width + '×' + mini.style.height));
+  ok(!!mini && mini.style.right === '12px' && mini.style.bottom === '44px' && mini.style.left === 'auto', '★★ 默认锚右下角（避开 FAB；未拖动 ⇒ 窗口缩放自动跟随）', mini && (mini.style.right + '/' + mini.style.bottom + ' left=' + mini.style.left));
+  ok(!!mini && mini.getAttribute('data-shinki-mini-tier') === 's' && mini.getAttribute('data-shinki-mini-compact') === '1', '★ 默认档位 s + 紧凑态');
+  const mroot = (function () { for (let i = ROOTS.length - 1; i >= 0; i--) { const r = ROOTS[i]; if (r.host && r.host.__attrs && r.host.__attrs['data-shinki-mini-body']) return r; } return null; })();
+  ok(!!mroot && mroot.renders.length > 0, '★ 迷你视图交给独立 React root 渲染');
+  if (mroot) { try { runView(mroot.renders[mroot.renders.length - 1]); } catch (e) { ok(false, '迷你包装组件执行抛错：' + e.message); } }
+  ok(!!miniProps && miniProps.form === 'mini', '★★ 迷你实现拿到 form=mini（是独立实现，不是主视图复用）', miniProps && miniProps.form);
+  ok(!!miniProps && miniProps.width === 240 && miniProps.height === 80, '★ 迷你 props 带当前盒子尺寸（provider 据此换布局）', miniProps && (miniProps.width + '×' + miniProps.height));
+  ok(!!miniProps && miniProps.maxWidth === 240 && miniProps.maxHeight === 240, '★ 档位 s 的最大值 240×240', miniProps && (miniProps.maxWidth + '×' + miniProps.maxHeight));
+  ok(!!miniProps && typeof miniProps.setTier === 'function' && typeof miniProps.setCompact === 'function' && typeof miniProps.setOpacity === 'function' && typeof miniProps.close === 'function', '★ 迷你 props 暴露 setTier/setCompact/setOpacity/close');
+  ok(!!miniProps && !!miniProps.store && !!miniProps.scope && !!miniProps.tab, '★ 迷你 props 同样注入 better-sidebar 口径 store/scope/tab');
+  // 数据共享：迷你写 ⇒ 主视图读（同一份 per-session store）
+  try { miniProps.store.set('mini-shared-probe', 42); } catch (e) { ok(false, '迷你 store.set 抛错：' + e.message); }
+  svc.open('mini-probe', 'bottom');
+  const proot = (function () { for (let i = ROOTS.length - 1; i >= 0; i--) { const r = ROOTS[i]; if (r.host && r.host.__attrs && r.host.__attrs['data-shinki-view-body']) return r; } return null; })();
+  ok(!!proot, '★ 主视图（底部栏）也已挂到它自己的 root');
+  if (proot) { try { runView(proot.renders[proot.renders.length - 1]); } catch (e) { ok(false, '主视图包装组件执行抛错：' + e.message); } }
+  ok(!!mainProps && mainProps.store && mainProps.store.get('mini-shared-probe') === 42, '★★ 数据共享：迷你视图写入的值，主视图能读到（同一份 store，没有第二份状态）', mainProps && mainProps.store.get('mini-shared-probe'));
+  // 三档规格
+  const click = (sel) => { const b = mini.querySelector(sel); if (!b) return false; (b.__listeners.click || []).forEach((f) => f({ stopPropagation() {} })); return true; };
+  ok(click('[data-shinki-mini-tier-btn="m"]'), '点「400×400」档');
+  ok(mini.style.width === '400px' && mini.style.height === '400px', '★★ 规格档 400×400 生效', mini.style.width + '×' + mini.style.height);
+  try { runView(mroot.renders[mroot.renders.length - 1]); } catch (e) { ok(false, '改档后重渲染抛错：' + e.message); }
+  ok(miniProps.maxWidth === 400 && miniProps.height === 400, '★★ 迷你 props 同步新规格（maxWidth=400 / height=400 ⇒ provider 据此换布局）', miniProps.maxWidth + '/' + miniProps.height);
+  click('[data-shinki-mini-tier-btn="l"]');
+  ok(mini.style.width === '500px' && mini.style.height === '500px', '★★ 规格档 500×500 生效', mini.style.width + '×' + mini.style.height);
+  click('[data-shinki-mini-tier-btn="s"]');
+  ok(mini.style.width === '240px' && mini.style.height === '240px', '★★ 规格档 240×240 生效', mini.style.width + '×' + mini.style.height);
+  click('[data-shinki-mini-compact-btn]');
+  ok(mini.style.width === '240px' && mini.style.height === '80px', '★★「▭ 紧凑」回到默认 240×80', mini.style.width + '×' + mini.style.height);
+  // 透明度
+  const sl = mini.querySelector('[data-shinki-mini-opacity]');
+  ok(!!sl, '★ 有透明度控件（hover 显示的控制条里）');
+  if (sl) { sl.value = '50'; (sl.__listeners.input || []).forEach((f) => f({})); }
+  ok(Number(mini.style.opacity) >= 0.49 && Number(mini.style.opacity) <= 0.51, '★ 透明度可调（50% ⇒ opacity .5）', mini.style.opacity);
+  // 拖动 + 位置持久化
+  try { (mini.__listeners.mousedown || []).forEach((f) => f({ button: 0, target: mini, clientX: 300, clientY: 200, preventDefault() {}, stopPropagation() {} })); } catch (e) { ok(false, 'mousedown 抛错：' + e.message); }
+  ok(mini.getAttribute('data-shinki-mini-dragging') === '1', '★ 拖动中带标记（控制条常显/主题色边框）', mini.getAttribute('data-shinki-mini-dragging'));
+  try { fireDoc('mousemove', { clientX: 360, clientY: 240 }); } catch (e) { /* 忽略 */ }
+  ok(mini.style.left !== 'auto' && /px$/.test(String(mini.style.left)), '★ 拖动改为 left/top 定位', mini.style.left + ',' + mini.style.top);
+  try { fireDoc('mouseup', { clientX: 360, clientY: 240 }); } catch (e) { /* 忽略 */ }
+  const sessA = saveAndRead('sess-A') || {};
+  const mv = ((sessA.values || {}).mini || {}).byView || {};
+  ok(!!mv['mini-probe'], '★★ 迷你显示配置已持久化（values.mini.byView）', mv['mini-probe']);
+  ok(!!mv['mini-probe'] && typeof mv['mini-probe'].x === 'number' && typeof mv['mini-probe'].y === 'number', '★ 位置已保存（x/y）', mv['mini-probe']);
+  ok(!!mv['mini-probe'] && Math.abs((mv['mini-probe'].opacity || 1) - 0.5) < 0.03, '★ 透明度已保存', mv['mini-probe'] && mv['mini-probe'].opacity);
+  ok(!!mv['mini-probe'] && mv['mini-probe'].tier === 's' && mv['mini-probe'].compact === true, '★ 规格档/紧凑态已保存', mv['mini-probe'] && (mv['mini-probe'].tier + '/' + mv['mini-probe'].compact));
+  // 与主窗口配置互不干扰
+  ok(typeof sessA.height === 'number' && typeof sessA.open === 'boolean' && !('mini' in sessA), '★★ 迷你配置与主窗口（底部栏）配置彼此独立：面板键仍是 open/height/tabOrder/active/values', Object.keys(sessA).join(','));
+  // 关闭 / 再打开
+  click('[data-shinki-mini-close]');
+  ok(mini.style.display === 'none', '★ ✕ 关闭迷你窗口', mini.style.display);
+  ok(svc.miniables().includes('mini-probe'), '★ 关闭后仍在 miniables（可再打开）');
+  svc.openMini('mini-probe');
+  ok(mini.style.display !== 'none', '★★ openMini() 重新显示', mini.style.display);
+  ok(mini.style.left !== 'auto', '★ 重新显示后位置保持（持久化生效）', mini.style.left + ',' + mini.style.top);
+}
+
 console.log('\n' + (failed ? `❌ 失败 ${failed} 项` : '✅ 全部通过'));
 console.log('—— 几何诊断日志（用于确认新代码真的执行到了）——');
 const diag = logs.filter((l) => /dbg|挤压高度写入|几何诊断|抛错|is not defined/.test(l));

@@ -132,6 +132,10 @@ const handle = ctx.shinkiViews.register({
   order: 50,                       // 可选，形态内排序
   render: (props) => el,           // 渲染函数：接收稳定 props，返回 React 元素/节点
   targets: ['bottom', 'mainView', 'popup'],   // 想落到哪些形态；不支持者自动跳过
+  mini: {                          // ★ v3：迷你 / 悬停窗口 —— **单独的迷你视图实现**（不复用 render）
+    render: (props) => el,         //   独立实现；props 见下表（含 tier/width/height，据此换布局）
+    defaultVisible: true,          //   可选，缺省 true：注册后默认以 240×80 显示在右下角
+  },
 });
 // 卸载时：handle.dispose()
 ```
@@ -145,6 +149,10 @@ const handle = ctx.shinkiViews.register({
 | `close()` | 请求关闭/收起当前形态：底部栏=收起面板（视图保持挂载）；弹窗=关窗；官方槽位（右栏/主视图）的开关由宿主掌管，本层只告警 |
 | `setTitle(t)` | 动态改标题：底部栏 TAB 条 / ≡ 菜单即时生效；官方右栏已打开的 tab 标题由宿主在 openTab 时捕获，需重开该 tab |
 | `isDetached` | 是否运行在独立窗口（弹窗形态为 true，跨窗口通信走 `BroadcastChannel`）|
+| `tier` / `compact` | **仅 mini**：当前规格档 `'s' \| 'm' \| 'l'`（最大 240×240 / 400×400 / 500×500）与是否紧凑条（默认 240×80）|
+| `width` / `height` | **仅 mini**：当前盒子尺寸（px）——**布局必须按它自适应**（同一实现要能承载紧凑条与三档）|
+| `maxWidth` / `maxHeight` | **仅 mini**：该档最大尺寸 |
+| `setTier(t)` / `setCompact(b)` / `setOpacity(o)` | **仅 mini**：让消费方自己也能改规格/紧凑/透明度（等同控制条上的按钮/滑块）|
 
 **字段覆盖矩阵**（上面五个字段在**任何**形态都拿得到；官方槽位缺的那几个由适配层补齐）：
 
@@ -154,6 +162,7 @@ const handle = ctx.shinkiViews.register({
 | 右栏 tab（sidebar.right.pane.tab）| 真实 DOM 节点（portal 目标，首帧可用）| `'bottom'` | ⚠️ 宿主掌管 | ✅（同上）| `false` | `sessionId`、`useTabInfo` 等原样透传 |
 | 主视图（conversation.view）| 同上 | `'mainView'` | ⚠️ 宿主掌管 | ✅ | `false` | `inspectCall`/`openView`/`viewRequest`/`completeViewRequest` + kit |
 | 弹窗 / 面板内全屏 | 承载 host DOM | `'popup'` | ✅ 关窗 | ✅ | `true` | — |
+| 迷你 / 悬停窗口（v3）| 承载 body DOM（独立 React root）| `'mini'` | ✅ 关闭迷你窗 | ✅ | `false` | — + `tier/width/height/maxWidth/maxHeight/setTier/setCompact/setOpacity` |
 
 > **better-sidebar 口径的 props 也已由本层合成注入**：`visible`（恒 true，消费方靠它开轮询）、
 > `scope`（`{sessionId, cwd}`）、`tab`（`{id,type,title,meta}`）、`store`（`get/set/getPrefs/setPrefs/update/updateTab/subscribe/getSnapshot`）。
@@ -169,12 +178,13 @@ const handle = ctx.shinkiViews.register({
 | 官方右栏（不是形态名，由 `bottom` 实现顺带注册） | `sidebarRightTabs.register` + `slots('sidebar.right.pane.tab')`；承载层 `slotHostView` 提供 portal `container`、`close/setTitle/isDetached` 与渲染错误边界 |
 | `mainView` | 官方 `conversation.view` 槽位：`slots.inject('conversation.view', () => slots.register({name,id,order,label,inject}, Body))`（与「对话/轨迹」同级） |
 | `popup` | 默认**面板内全屏承载**（自绘标题栏 + ✕ + Esc + 滚轮兜底）；真独立窗口 `window.open` 在本宿主不可靠，仅保留 `openPopupWindow()` |
+| `mini`（v3）| **悬停 / 迷你窗口**：`<body>` 下 `position:fixed`（`z-index:9000`，低于菜单/FAB）、独立 React root；三档规格 **最大 240×240 / 400×400 / 500×500**，**默认 240×80 紧凑条锚右下角**（避开本插件 FAB）；hover 才显控制条、可拖动、可调透明度、✕ 关闭；**显示配置（位置/规格/透明度/可见性）与主窗口完全独立**，按「会话 + 视图」存在 `values.mini.byView`；**数据必须与主视图共享**（同一个 `store`，消费方不得复刻第二份状态）|
 
 **降级原则**：任一形态不可用 ⇒ 只 `console.warn` 并跳过该形态，**其余形态照常**，绝不抛错、绝不让宿主/消费方 `pending`。
 
 ### 兼容与版本
 
-- 契约带版本：`CONTRACT_VERSION = 2`（v2 增加 `background` 后台策略，缺省等价 v1）；适配层承诺同时支持 **N 与 N-1**，升级期不破坏存量插件。
+- 契约带版本：`CONTRACT_VERSION = 3`（v2 增加 `background` 后台策略、v3 增加 `mini` 悬停/迷你窗口；都缺省兼容旧行为）；适配层承诺同时支持 **N 与 N-1**，升级期不破坏存量插件。
 - 能力探测而非版本号判断：一律 `typeof fn === 'function'` 实测，避免"看着有其实没有"。
 - 所有注册句柄可 `dispose()`；插件卸载/热重载后可干净重注册。
 
