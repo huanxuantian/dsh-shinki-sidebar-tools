@@ -784,6 +784,23 @@ console.log('\n=== R. 迷你 / 悬停窗口（mini 形态） ===');
   ok(Math.abs(Number(mini.style.opacity) - 0.5) < 0.03, '★★ 切回 A ⇒ 透明度恢复', mini.style.opacity);
 }
 
+console.log('\n=== S. right 形态（与 bottom 共用右栏注册，不重复出 tab） ===');
+{
+  const railCount = (id) => (REG.slots || []).filter((x) => x.opts && x.opts.name === 'sidebar.right.pane.tab' && x.opts.key === id).length;
+  const tabCount = (id) => (REG.tabs || []).filter((t) => t && t.id === id).length;
+  ok(svc.forms().includes('right'), '★ 形态表含 right（不再是"未知形态"）', svc.forms().join(','));
+  // 常规写法：bottom + right 同时声明 ⇒ 右栏入口只应注册一次
+  svc.register({ id: 'vR', title: '右栏探针', targets: ['bottom', 'right'], background: 'pause', render: () => ({ type: 'div', props: {} }) });
+  tick();
+  ok(tabCount('vR') === 1, '★★ targets:[bottom,right] ⇒ 官方右栏 tab 只注册一次（不会出现两个）', tabCount('vR'));
+  ok(railCount('vR') === 1, '★★ targets:[bottom,right] ⇒ sidebar.right.pane.tab 只注入一次', railCount('vR'));
+  ok(!logs.some((l) => /未知形态已跳过.*vR/.test(l)), '★★ 不再打「未知形态已跳过：right」噪音');
+  // 只声明 right ⇒ 以前拿不到入口，现在应当有
+  svc.register({ id: 'vR2', title: '只右栏', targets: ['right'], background: 'pause', render: () => ({ type: 'div', props: {} }) });
+  tick();
+  ok(tabCount('vR2') === 1 && railCount('vR2') === 1, '★★ 只声明 targets:[right] ⇒ 也能拿到官方右栏入口（以前是空的）', tabCount('vR2') + '/' + railCount('vR2'));
+}
+
 console.log('\n' + (failed ? `❌ 失败 ${failed} 项` : '✅ 全部通过'));
 console.log('—— 几何诊断日志（用于确认新代码真的执行到了）——');
 const diag = logs.filter((l) => /dbg|挤压高度写入|几何诊断|抛错|is not defined/.test(l));
