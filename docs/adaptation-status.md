@@ -55,7 +55,7 @@
 | 官方右栏（`sidebarRightTabs` + `sidebar.right.pane.tab`） | 官方 seat 承载：`slotHostView` = portal + **真实 `container`（首帧可用）** + `close/setTitle/isDetached` + 错误边界；`overflow:auto` 承接视图溢出 | 官方「+」/ ≡ →可创建 / 打开视图的右栏路径 | ✅ 6 个插件在用 |
 | `mainView` | 官方 `conversation.view` 槽位注册（与「对话/轨迹」同级），`slots.register(options, Component)` 第二参数传组件 | 官方视图切换器 | ✅ 已注册（music 在用） |
 | `popup` | 默认**面板内全屏承载**（自绘标题栏 + ✕ + Esc，含滚轮兜底）；`openPopupWindow()` 真窗口仅保留 | ≡ →独立弹窗 / `openPopup(id)` | ✅ 已验证；真窗口在本宿主 QtWebEngine 下不可靠（会被当成本页导航） |
-| `mini`（v3，悬停/迷你窗口；**首个消费方 = `dsh-shinki-music`**，2026-10-09）| **自绘浮窗**：`<body>` 下 `position:fixed`、`z-index:9000`（高于底部栏 100、低于菜单/FAB）、独立 React root + 错误边界；三档规格 **最大 240×240 / 400×400 / 500×500**，**默认 240×80 紧凑条、锚右下角**（right 12 / bottom 44，避开本插件 FAB）；hover 显控制条（握把 + 三档 + ▭ 紧凑 + 透明度滑块 + ⇄ 切换 + ✕）；可拖动（pointer/mouse，四边夹取）| ≡ 菜单「迷你 / 悬停视图」/ 底部栏 `＋` 下拉 / `openMini(id)` / `toggleMini(id)` | ✅ **用户实测三档（240×240 / 400×400 / 500×500）与默认 240×80 均通过（2026-10-09）**；205 项回归含 30+ 项 mini 断言 |
+| `mini`（v3，悬停/迷你窗口；**首个消费方 = `dsh-shinki-music`**，2026-10-09）| **自绘浮窗**：`<body>` 下 `position:fixed`、`z-index:9000`（高于底部栏 100、低于菜单/FAB）、独立 React root + 错误边界；三档规格 **最大 240×240 / 400×400 / 500×500**，**默认 240×80 紧凑条、锚右下角**（right 12 / bottom 44，避开本插件 FAB）；**是否启动即显示**由 `mini.defaultVisible` 决定（**缺省 false = 不显示**；首个显式声明的消费方 = `dsh-shinki-music`）；hover 显控制条（握把 + 三档 + ▭ 紧凑 + 透明度滑块 + ⇄ 切换 + ✕）；可拖动（pointer/mouse，四边夹取）| ≡ 菜单「迷你 / 悬停视图」/ 底部栏 `＋` 下拉 / `openMini(id)` / `toggleMini(id)` | ✅ **用户实测三档（240×240 / 400×400 / 500×500）与默认 240×80 均通过（2026-10-09）**；217 项回归含 30+ 项 mini 断言 |
 
 > ✅ **`right` 已是正式形态（2026-10-09 补齐）**：与 `bottom` **共用同一段右栏注册**（`registerRightRail`）并按 id 去重，
 > 因此 `targets:['bottom','right']` 只会产生一个 tab，不再有「未知形态已跳过：right」噪音；只写 `targets:['right']` 也能拿到入口。
@@ -93,6 +93,7 @@
 | `store` | 同上 | `get/set/getPrefs/setPrefs/update/updateTab/subscribe/getSnapshot`；`get/set/updateTab(meta)` 按会话，`prefs` 全局 |
 | `tier` / `compact` / `width` / `height` / `maxWidth` / `maxHeight` | **仅 mini** | 规格档与当前盒子尺寸 —— 消费方的迷你实现**必须按 width/height 自适应**（同一实现要承载 240×80 紧凑条与三档） |
 | `setTier(t)` / `setCompact(b)` / `setOpacity(o)` | **仅 mini** | 消费方也可改规格/紧凑/透明度（等同控制条） |
+| `mini.defaultVisible`（注册时声明）| **仅 mini** | **缺省 false**：注册后是否在启动时显示；显式 `true` 才开机即出现在右下角（`dsh-shinki-music` 即如此） |
 
 ## 4. 按会话隔离状态（用户需求：状态跟着对话走）
 
@@ -119,7 +120,7 @@
 8. **迷你窗：显示配置独立、数据共享**（用户明确要求）——位置 / 规格档 / 紧凑态 / 透明度 / 可见性存在
    `values.mini.byView[<视图 id>]`（与底部栏的 `open/height/tabOrder/active` 互不影响，按**会话 + 视图**隔离）；
    而**播放状态这类业务数据必须与主视图共享同一份**（同一个 `store`；消费方不得在迷你实现里再建一份状态/播放器实例）。
-9. 迷你窗默认**锚右下角**且**避开本插件 FAB**（FAB 在 `right:8/bottom:8`、26×26；迷你默认 `right:12/bottom:44`）；
+9. 迷你窗**缺省不自动显示**（仅 `mini.defaultVisible === true` 时启动即显示）；默认**锚右下角**且**避开本插件 FAB**（FAB 在 `right:8/bottom:8`、26×26；迷你默认 `right:12/bottom:44`）；
    一旦手动拖动即转为 `left/top` 绝对定位并持久化。
 
 ## 6. 待办 / 已知缺口

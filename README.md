@@ -134,7 +134,8 @@ const handle = ctx.shinkiViews.register({
   targets: ['bottom', 'mainView', 'popup'],   // 想落到哪些形态；不支持者自动跳过
   mini: {                          // ★ v3：迷你 / 悬停窗口 —— **单独的迷你视图实现**（不复用 render）
     render: (props) => el,         //   独立实现；props 见下表（含 tier/width/height，据此换布局）
-    defaultVisible: true,          //   可选，缺省 true：注册后默认以 240×80 显示在右下角
+    defaultVisible: false,         //   可选，**缺省 false = 启动不显示**；显式 true 才在启动时以 240×80 显示在右下角
+                                   //   （例：dsh-shinki-music 显式声明 true，才会开机就出现播放器迷你条）
   },
 });
 // 卸载时：handle.dispose()
@@ -178,7 +179,7 @@ const handle = ctx.shinkiViews.register({
 | 官方右栏 = 形态 **`right`**（2026-10-09 起；与 `bottom` 共用注册、同 id 去重；承载视图沿用 `form:'bottom'`）| `sidebarRightTabs.register` + `slots('sidebar.right.pane.tab')`；承载层 `slotHostView` 提供 portal `container`、`close/setTitle/isDetached` 与渲染错误边界 |
 | `mainView` | 官方 `conversation.view` 槽位：`slots.inject('conversation.view', () => slots.register({name,id,order,label,inject}, Body))`（与「对话/轨迹」同级） |
 | `popup` | 默认**面板内全屏承载**（自绘标题栏 + ✕ + Esc + 滚轮兜底）；真独立窗口 `window.open` 在本宿主不可靠，仅保留 `openPopupWindow()` |
-| `mini`（v3）| **悬停 / 迷你窗口**：`<body>` 下 `position:fixed`（`z-index:9000`，低于菜单/FAB）、独立 React root；三档规格 **最大 240×240 / 400×400 / 500×500**，**默认 240×80 紧凑条锚右下角**（避开本插件 FAB）；hover 才显控制条、可拖动、可调透明度、✕ 关闭；**显示配置（位置/规格/透明度/可见性）与主窗口完全独立**，按「会话 + 视图」存在 `values.mini.byView`；**数据必须与主视图共享**（同一个 `store`，消费方不得复刻第二份状态）。**参考实现**：`dsh-shinki-music` 的 `MiniBody`（播放控制 + 曲目名跑马灯；播放数据上提为模块级 `PLAYER` store，全插件唯一 `<audio>`，主视图与迷你视图共用）|
+| `mini`（v3）| **悬停 / 迷你窗口**：`<body>` 下 `position:fixed`（`z-index:9000`，低于菜单/FAB）、独立 React root；三档规格 **最大 240×240 / 400×400 / 500×500**，**默认 240×80 紧凑条锚右下角**（避开本插件 FAB；**是否启动即显示**由 `mini.defaultVisible` 决定，**缺省不显示**，从 ≡ 菜单 / ＋ 下拉打开）；hover 才显控制条、可拖动、可调透明度、✕ 关闭；**显示配置（位置/规格/透明度/可见性）与主窗口完全独立**，按「会话 + 视图」存在 `values.mini.byView`；**数据必须与主视图共享**（同一个 `store`，消费方不得复刻第二份状态）。**参考实现**：`dsh-shinki-music` 的 `MiniBody`（播放控制 + 曲目名跑马灯；播放数据上提为模块级 `PLAYER` store，全插件唯一 `<audio>`，主视图与迷你视图共用）|
 
 **降级原则**：任一形态不可用 ⇒ 只 `console.warn` 并跳过该形态，**其余形态照常**，绝不抛错、绝不让宿主/消费方 `pending`。
 
