@@ -49,6 +49,10 @@ DSH 右侧边栏增强（纯客户端、零注入）：
 | 4 | 在 profile 中把 `dsh-better-sidebar` 标为**可选**，禁用后回归上述判定 | 禁用后各插件视图仍可用 |
 | 5 | 逐个评估依赖它的插件（music / git-graph / serial-monitor / svn-graph），切换或保留 | 无 `pending`、无功能缺失 |
 
+> **进度（2026-10-06）**：第 1–5 步均已完成 —— 能力自足（横向滚动 / ≡ 全部视图 / 菜单边界自适应）、
+> `bottom` 自实现、打开路径官方优先、profile 中 `dsh-better-sidebar` 已 `disabled: true`、
+> 6 个插件全部切到一句声明且无功能缺失。详见 [`docs/adaptation-status.md`](docs/adaptation-status.md)。
+
 ### 现状（已具备的基础）
 
 - 打开视图：`sidebarRight.openTab` 优先，`betterSidebar` 的方法名探测**仅作兜底**（5 处引用，全部在兜底分支）
@@ -59,6 +63,13 @@ DSH 右侧边栏增强（纯客户端、零注入）：
 
 目标：本插件除"右侧边栏可达性增强"外，进一步提供**三种扩展视图形态**，并逐步摆脱对第三方
 `dsh-better-sidebar` 的依赖。以下为**依据实测源码得出的接入口**（非猜测）。
+
+> **2026-10-06 现状（本节已被实现超越，以 [`docs/adaptation-status.md`](docs/adaptation-status.md) §1 为准）**：
+> 三种形态**均已落地**，且实现方式与当时的"待确认"不同 ——
+> 形态 A → **自绘底部面板**（官方并无下方面板槽位；浮层降级方案被弃用后改为自绘实体面板）；
+> 形态 B → 走官方 **`conversation.view`** 槽位（不是 `registerTrajectoryConversationView`）；
+> 形态 C → 默认**面板内全屏承载**（真 `window.open` 在本宿主 QtWebEngine 下会被当成本页导航）。
+> 本节保留当时的侦察结论作为背景。
 
 ### 形态 A：下方扩展视图（bottom panel tabs）
 
@@ -105,7 +116,7 @@ DSH 右侧边栏增强（纯客户端、零注入）：
 | 问题 | 由本层吸收 |
 |---|---|
 | DSH 破坏性更新 / 新特性（槽位改名、API 换签名、新增形态）| 只改**本插件一处**，已接入的插件**零改动** |
-| 上游 `dsh-better-sidebar` 跟不上官方，或自身引入破坏性改动 | 本插件**优先官方实现**，第三方仅作**过渡桥**；可随时禁用而上层不受影响 |
+| 上游 `dsh-better-sidebar` 跟不上官方，或自身引入破坏性改动 | 本插件**优先官方实现**：右栏/底部/主视图/弹窗**都不再经过第三方**（`registerTab` 过渡桥已移除），仅「打开视图」的最后兜底分支保留第三方方法名探测；本 profile 已 `disabled: true` 且回归通过 |
 | 每个插件各自对接多个视图形态，重复且易踩坑 | 统一契约 + 统一降级策略，接入成本降到一句声明 |
 | 官方扩展点尚未稳定 | 能力探测 + 降级链，**缺失只是少一个形态，不阻塞插件激活** |
 
@@ -143,22 +154,26 @@ const handle = ctx.shinkiViews.register({
 | 主视图（conversation.view）| 同上 | `'mainView'` | ⚠️ 宿主掌管 | ✅ | `false` | `inspectCall`/`openView`/`viewRequest`/`completeViewRequest` + kit |
 | 弹窗 / 面板内全屏 | 承载 host DOM | `'popup'` | ✅ 关窗 | ✅ | `true` | — |
 
-> 注意：消费方若按 better-sidebar 口径取 `props.store` / `props.scope` / `props.tab` / `props.visible`，
-> 这些**不在**本契约里（官方 kit 用的是 `useStore` / `sessionId` / `useTabInfo`），请改用契约字段。
+> **better-sidebar 口径的 props 也已由本层合成注入**：`visible`（恒 true，消费方靠它开轮询）、
+> `scope`（`{sessionId, cwd}`）、`tab`（`{id,type,title,meta}`）、`store`（`get/set/getPrefs/setPrefs/update/updateTab/subscribe/getSnapshot`）。
+> 6 个消费方都是从 better-sidebar 迁来的，实际读的就是这套（例：`store.updateTab(tab.id,{meta})` 存每视图设置）。
+> 其中 `tab.meta` 与 `store.get/set` 落在**按会话状态**里，`store.getPrefs/setPrefs` 为全局；
+> 右栏/主视图路径上官方 slot 的 kit（`useStore`/`sessionId`/`useTabInfo`）仍原样透传。
 
 ### 适配层内部：形态 → 实现（按优先级探测）
 
 | 形态 | 实现优先级 |
 |---|---|
-| `bottom` | ① 官方下方面板槽位（待确认 `dsh-client-ui-layout`）→ ② 本插件自绘面板 → ③ **过渡桥**：`betterSidebar.registerTab` |
-| `mainView` | ① 官方 `registerTrajectoryConversationView` + `ctx.slots`（与「对话/轨迹」同级）→ ② 跳过并 `console.warn` |
-| `popup` | ① 本插件 host 路由 `GET /shinki-tools/html?view=<id>` 返回自包含 HTML → `window.open(url,'_blank','noopener,noreferrer')`（无外部依赖）|
+| `bottom` | **本插件自绘面板**（挂 `<body>`、`position:fixed`、`z-index:100`；拖拽握把 + TAB 条 + `＋` 下拉 + ✕）；让位 = 会话列 `margin-bottom`；滚动由 CSS `overflow:auto` 按内容高度决定。**已移除** better-sidebar `registerTab` 过渡桥 |
+| 官方右栏（不是形态名，由 `bottom` 实现顺带注册） | `sidebarRightTabs.register` + `slots('sidebar.right.pane.tab')`；承载层 `slotHostView` 提供 portal `container`、`close/setTitle/isDetached` 与渲染错误边界 |
+| `mainView` | 官方 `conversation.view` 槽位：`slots.inject('conversation.view', () => slots.register({name,id,order,label,inject}, Body))`（与「对话/轨迹」同级） |
+| `popup` | 默认**面板内全屏承载**（自绘标题栏 + ✕ + Esc + 滚轮兜底）；真独立窗口 `window.open` 在本宿主不可靠，仅保留 `openPopupWindow()` |
 
 **降级原则**：任一形态不可用 ⇒ 只 `console.warn` 并跳过该形态，**其余形态照常**，绝不抛错、绝不让宿主/消费方 `pending`。
 
 ### 兼容与版本
 
-- 契约带版本：`CONTRACT_VERSION = 1`；适配层承诺同时支持 **N 与 N-1**，升级期不破坏存量插件。
+- 契约带版本：`CONTRACT_VERSION = 2`（v2 增加 `background` 后台策略，缺省等价 v1）；适配层承诺同时支持 **N 与 N-1**，升级期不破坏存量插件。
 - 能力探测而非版本号判断：一律 `typeof fn === 'function'` 实测，避免"看着有其实没有"。
 - 所有注册句柄可 `dispose()`；插件卸载/热重载后可干净重注册。
 
@@ -170,17 +185,17 @@ const handle = ctx.shinkiViews.register({
 4. `bottom` 自实现，**禁用 `better-sidebar` 后回归验证**；
 5. 消费方逐个切换为"一句声明"（首个：`dsh-shinki-music`），完成后再评估是否彻底移除过渡桥。
 
+> **进度（2026-10-06）**：5 步全部执行完毕 —— `bottom` 已自绘实现且**过渡桥已移除**；`popup`/`mainView` 已落地；
+> 6 个消费方（8 个视图）全部切到一句声明；profile 中 `dsh-better-sidebar` 已 `disabled: true` 并回归通过。
+
 ## 实现进度（适配层）
 
-| 步 | 内容 | 状态 | 证据 |
-|---|---|---|---|
-| — | 适配层骨架：`ctx.provide('shinkiViews', …)`（cordis 不允许直接赋值服务）+ 逐形态能力探测与降级 | ✅ 已完成 | 日志 `适配层就绪：ctx.shinkiViews (v1)`，无 `without provide` |
-| — | **popup 形态**：默认**面板内全屏承载**（自绘标题栏 + ✕ + Esc） | ✅ 已验证 | 用户实测：铺满界面、正常显示、关闭返回主页 |
-| — | popup 备选路径 `openPopupWindow()`（真·独立窗口） | ⏸ 保留不用 | 本宿主 QtWebEngine 未接管 `createWindow`：`window.open(location.origin+'/')` 被当作**当前视图跳转**，表现为"闪一下并刷新主页面" |
-| 1 | 第一个消费方：`dsh-shinki-music` 一句声明 `targets:['popup']` | ✅ 已验证 | 用户实测 `≡ → 独立弹窗 → dsh-shinki-music` 全屏播放器正常 |
-| 2 | `mainView`（与「对话/轨迹」同级）| 🔜 待做 | 接入点：官方 `@deepseek-ai/dsh-client-ui-trajectory` 的 `registerTrajectoryConversationView`（签名待读，见下）|
-| 3 | `bottom` 自实现 → 禁用 `dsh-better-sidebar` 回归 | 🔜 待做 | 先确认 `dsh-client-ui-layout` 的下方面板槽位 |
-| 4 | 其余插件（git-graph / serial-monitor / svn-graph）逐个切换为一句声明 | 🔜 待做 | — |
+**现状快照见 [`docs/adaptation-status.md`](docs/adaptation-status.md)** —— 形态 × 实现 × 入口 × 状态、
+6 个消费方 / 8 个视图的适配矩阵、props 契约、按会话状态、关键不变量、待办，都在那一份里。
+
+一句话：四种承载（**底部自绘面板 / 官方右栏 seat / `conversation.view` / 弹窗·面板内全屏**）均已落地并实测通过；
+6 个消费方（music、git-graph、serial-monitor、svn-graph、js-ble-tool、ble-tool）全部走"一句声明"；
+本 profile 中 `dsh-better-sidebar` 已 `disabled: true`，全链路不依赖第三方。
 
 ### 经验记录（避免重复踩坑）
 
@@ -271,15 +286,16 @@ h.dispose();
 挂载时派发 `onResume`、卸载时按策略派发 `onSuspend`/`onStop`，并注入 `props.background`
 ⇒ 插件无需手写生命周期。已用于 `dsh-shinki-music`（`background:'force'`，切视图不断播）。
 
-## 待办（已确认延后，勿丢）
+## 待办（现状与做法见 [`docs/adaptation-status.md`](docs/adaptation-status.md) §6）
 
-| # | 事项 | 现状 / 做法 | 备注 |
-|---|---|---|---|
-| 1 | **隐藏自检视图** `dsh-shinki-tools:sandbox` | 当前会出现在 `≡ → 可创建` 列表里；做法：视图声明加 `hidden: true`，清单构建处过滤（约 3 行）| **用户已确认"后续再隐藏"** |
-| 2 | **serial-monitor 的 4 处运行时 `ctx.betterSidebar.*`** | `updateTab`（下方面板停靠）/ `getSnapshot`（设置持久化）在去掉 `inject: betterSidebar` 后属性访问被 cordis 拒绝 ⇒ 有 `?.`+`try/catch` 不崩，但**两个功能静默降级**；做法：改为安全取法 `(ctx.get ? ctx.get('betterSidebar') : ctx.betterSidebar)`（4 行）| 只影响该插件的老模式专有能力 |
-| 3 | **`bottom` 自实现** | 目前 `bottom` 形态用 **better-sidebar 过渡桥**；自实现后即可**完全移除**第三方依赖（路线图第 4 步）| 需先确认官方 `dsh-client-ui-layout` 的下方面板槽位 |
-| 4 | **其余插件接入** | `js-ble-tool` / `ble-tool` 等尚未迁移（其 `inject` 里仍含 `betterSidebar`）| 同三个插件的做法：整体重写 `apply` |
-| 5 | **`force` 短路的可观测性** | 已补派发留痕（`生命周期派发：… ⇒ 不动作`）✅ | 已解决 |
+| # | 事项 | 状态 |
+|---|---|---|
+| 1 | 隐藏自检视图 `dsh-shinki-tools:sandbox` | ✅ 已**整块移除**（不再出现在任何菜单/可创建清单里） |
+| 2 | `serial-monitor` 的 4 处 `ctx.betterSidebar.*` | ⏳ 仍在：better-sidebar 已禁用 ⇒ 属性访问被 cordis 拒、功能静默降级（不崩）；建议改 `ctx.get('betterSidebar')` 或删老模式分支 |
+| 3 | `bottom` 自实现 | ✅ 已完成（自绘面板；让位/滚动/层次/按会话状态均实测通过） |
+| 4 | 其余插件接入 | ✅ 已完成（`js-ble-tool` / `ble-tool` 也已在"新模式"注册，共 6 插件 8 视图） |
+| 5 | `force` 短路的可观测性 | ✅ 已解决（派发留痕） |
+| 6 | `targets:['right']` 无效 + 「未知形态已跳过：right」噪音 | ⏳ 新增：右栏注册从 `bottom` 实现抽成共用函数并新增 `VIEW_FORMS.right`（详见 status §6 #1） |
 
 ### 迁移新插件时的固定顺序（血泪教训，勿搬移）
 
@@ -396,6 +412,10 @@ python3 tools/deploy-independent.py --apply    # 从源码整树复制（含把�
 **不碰官方槽位**：工具视图继续通过 **官方右侧栏**（`sidebarRightTabs` + `slots('sidebar.right.pane.tab')`）与 **`≡ → 可创建`** 进入。
 - ✅ 已验证可用、零第三方、会话区不受影响；
 - 自绘"应用底部大面板"方案**已废弃并删除代码**（浮层+预留空间的近似方案观感与官方/better-sidebar 差异大，用户判定不可用）。
+
+> **2026-10-06 更新**：上面这条**结论已被推翻** —— 按用户要求重新实现了自绘底部面板，它现在就是 `bottom` 的正式形态
+> （挂 `<body>`、`z-index:100`、拖拽握把、按会话隔离状态、让位走会话列 `margin-bottom`、滚动完全交由 CSS）。
+> 记在这里只为保留决策轨迹；当前实现与不变量见 [`docs/adaptation-status.md`](docs/adaptation-status.md) §1 / §5。
 
 ### 若将来仍要"底部"
 
