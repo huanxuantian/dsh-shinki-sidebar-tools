@@ -799,6 +799,14 @@ console.log('\n=== S. right 形态（与 bottom 共用右栏注册，不重复�
   svc.register({ id: 'vR2', title: '只右栏', targets: ['right'], background: 'pause', render: () => ({ type: 'div', props: {} }) });
   tick();
   ok(tabCount('vR2') === 1 && railCount('vR2') === 1, '★★ 只声明 targets:[right] ⇒ 也能拿到官方右栏入口（以前是空的）', tabCount('vR2') + '/' + railCount('vR2'));
+  // 注销后同 id 再注册：右栏入口应能重新建立（去重表要跟着清理）
+  const hR = svc.register({ id: 'vR3', title: '重注册探针', targets: ['right'], background: 'pause', render: () => ({ type: 'div', props: {} }) });
+  tick();
+  const before3 = railCount('vR3');
+  if (hR && typeof hR.dispose === 'function') hR.dispose();
+  svc.register({ id: 'vR3', title: '重注册探针', targets: ['right'], background: 'pause', render: () => ({ type: 'div', props: {} }) });
+  tick();
+  ok(before3 === 1 && railCount('vR3') === 2, '★★ 注销后同 id 再注册 ⇒ 右栏入口能重新建立（去重表随 dispose 清理）', before3 + '→' + railCount('vR3'));
 }
 
 console.log('\n' + (failed ? `❌ 失败 ${failed} 项` : '✅ 全部通过'));
