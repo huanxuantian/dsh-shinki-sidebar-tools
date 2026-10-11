@@ -895,8 +895,9 @@ console.log('\n=== U. 展开只恢复本会话已打开的视图（不复活被�
   clickU();                       // 收起（等价于用户点收起）
   clickU();                       // 再展开 → 旧实现在这里会挂载全部 bottom 视图并激活第一个
   ok(A === null, '★★ U6 展开没有把已关闭的视图重新激活（vA 的 render 未被调用 = 不再冒出 CAN）');
-  ok(!!findIn(body, 'shinki-tools-panel'), 'U7 面板对象仍在（只是没有活动视图）');
-  ok(logs.some((l) => /显示空面板/.test(l)), 'U8 走的是"空面板"分支而不是把视图塞回来（gui.log 可见）');
+  ok(panel.style.display !== 'none', '★★ U7 无视图时展开要**真的显示空面板**（不是按了没反应）', panel.style.display);
+  ok(!!walkFind(panel, (el) => el.dataset && el.dataset.addBtn === '1'), '★★ U8 空面板 TAB 条的「＋」可达（用户据此添加视图）');
+  ok(logs.some((l) => /显示空面板/.test(l)), 'U9 走的是"空面板"分支（gui.log 可见）');
 
   // 正常情况仍要能恢复：合法打开一个视图（等价于用户从菜单/＋ 打开）后收起再展开，应恢复它
   svc.open('vA', 'bottom'); flushTimersAt(1200);
