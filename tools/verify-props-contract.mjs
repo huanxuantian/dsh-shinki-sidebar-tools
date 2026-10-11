@@ -383,12 +383,15 @@ if (cssEl) {
 }
 ok(String(body.style.cssText || '') === '', '（参考）body 未被本插件写样式');
 
-console.log('\n=== H. 列解析不到时也要给确定盒子（避免窄条/内容浮空）===');
-panel.style.left = ''; panel.style.right = ''; panel.style.width = '';
+console.log('\n=== H. 列解析不到时**不**退回整屏通栏（那正是"面板占满整个视图"的成因）===');
+panel.style.left = ''; panel.style.right = ''; panel.style.width = ''; panel.style.visibility = '';
 columnAvailable = false;                                  // 模拟"列尚未出现"
 try { (winListeners['resize'] || []).forEach((f) => f()); } catch (e) { ok(false, 'resize 处理抛错：' + e.message); }
-ok(panel.style.left === '0px' && panel.style.right === '0px', '★ 兜底为 left/right:0（确定的满宽盒子）', panel.style.left + ' / ' + panel.style.right);
+ok(!(panel.style.left === '0px' && panel.style.right === '0px'), '★★ 量不到会话列时**不**再写 left/right:0（写了就是通栏占满视图）', panel.style.left + ' / ' + panel.style.right);
+ok(panel.style.visibility === 'hidden', '★ 量不到会话列时先隐藏，等重测（既不浮空也不通栏）', panel.style.visibility);
 columnAvailable = true;
+try { (winListeners['resize'] || []).forEach((f) => f()); } catch (e) { /* 忽略 */ }
+ok(panel.style.visibility === 'visible' && /px$/.test(panel.style.left || ''), '★ 列恢复后重测成功：面板重新定位且可见', panel.style.visibility + ' ' + panel.style.left);
 
 
 /* ── 测试 I：「＋」下拉必须能选中视图（历史 bug：mousedown 先把菜单删了）──────────── */
@@ -816,6 +819,88 @@ console.log('\n=== S. right 形态（与 bottom 共用右栏注册，不重复�
   svc.register({ id: 'vR3', title: '重注册探针', targets: ['right'], background: 'pause', render: () => ({ type: 'div', props: {} }) });
   tick();
   ok(before3 === 1 && railCount('vR3') === 2, '★★ 注销后同 id 再注册 ⇒ 右栏入口能重新建立（去重表随 dispose 清理）', before3 + '→' + railCount('vR3'));
+}
+
+/* ── 测试 T：完全按会话绑定（无全局开关；无会话不显示按钮、也不允许展开）──────── */
+console.log('\n=== T. 完全按会话：无全局开关 / 无会话不显示按钮也不允许展开 ===');
+{
+  const hdrT = REG.slots.filter((x) => x.opts && x.opts.name === 'conversation.session.header.utilities').pop();
+  const GLOBAL_KEYS = ['dsh-shinki-tools.bottomOpen', 'dsh-shinki-tools.ph'];
+  const DEFAULT_BUCKET = 'dsh-shinki-tools:v1:default';
+
+  // 种一条"收起"记录：等价于"上次会话里用户把底部栏关掉了"
+  localStore.setItem('dsh-shinki-tools:v1:sess-T', JSON.stringify({ open: false, height: 220, tabOrder: ['vA'], active: 'vA' }));
+  setSession('sess-T'); flushTimersAt(1200);
+  ok(panel.style.display === 'none', '★ T1 记录为"收起" ⇒ 该会话就是收起（不再读全局开关）', panel.style.display);
+
+  // 有会话时能正常展开，且收起状态写回**该会话**的记录
+  try { hdrT.comp().props.onClick({ preventDefault() {}, stopPropagation() {} }); } catch (e) { ok(false, 'T2 点开关抛错：' + e.message); }
+  ok(panel.style.display !== 'none', 'T2 有会话 ⇒ 点开关能展开', panel.style.display);
+  try { hdrT.comp().props.onClick({ preventDefault() {}, stopPropagation() {} }); } catch (e) { /* 忽略 */ }
+  flushTimersAt(200);
+  ok(!!readSess('sess-T') && readSess('sess-T').open === false, 'T3 收起状态写进该会话自己的记录', readSess('sess-T'));
+
+  // 切走再切回（与"重启后重新载入该会话"走同一条路径）⇒ 必须仍收起
+  setSession('sess-A'); flushTimersAt(1200);
+  setSession('sess-T'); flushTimersAt(1200);
+  ok(panel.style.display === 'none', '★★ T4 关掉后切回/重启仍是收起（不再被全局状态或 default 桶刷开）', panel.style.display);
+
+  // 无会话：按钮不渲染、面板收起、让位归零
+  setSession(null); flushTimersAt(1200);
+  ok(hdrT.comp() === null, '★★ T5 无会话 ⇒ 右上角开关按钮**不渲染**', hdrT.comp());
+  ok(panel.style.display === 'none', '★ T6 无会话 ⇒ 面板收起', panel.style.display);
+  ok(docEl.style['--dsh-shinki-bottom-height'] === '0px', '★ T7 无会话 ⇒ 让位归零', docEl.style['--dsh-shinki-bottom-height']);
+
+  // 无会话：即便请求"在底部栏打开"也不允许展开
+  try { svc.open('vA', 'bottom'); } catch (e) { /* 忽略 */ }
+  flushTimersAt(1200);
+  ok(panel.style.display === 'none', '★★ T8 无会话 ⇒ 请求在底部栏打开也不展开', panel.style.display);
+
+  // 全局键：全程一个都不该写；default 桶也不该出现
+  const wroteGlobal = GLOBAL_KEYS.filter((k) => localStore.getItem(k) !== null);
+  ok(wroteGlobal.length === 0, '★★ T9 全程未写任何全局开关键（bottomOpen / ph 已彻底移除）', wroteGlobal);
+  ok(localStore.getItem(DEFAULT_BUCKET) === null, '★★ T10 不再使用 default 桶（无会话不落盘）', localStore.getItem(DEFAULT_BUCKET));
+
+  // 回到有会话：按钮回来，且仍按该会话自己的记录
+  setSession('sess-T'); flushTimersAt(1200);
+  ok(panel.style.display === 'none', 'T11 回到会话 T ⇒ 仍按它自己的记录（收起）', panel.style.display);
+  ok(!!hdrT.comp(), 'T12 有会话 ⇒ 按钮重新渲染', !!hdrT.comp());
+}
+
+/* ── 测试 U：展开不得复活已关闭的视图（用户 2026-10-11：每次点展开都冒出 CAN）── */
+console.log('\n=== U. 展开只恢复本会话已打开的视图（不复活被关掉的）===');
+{
+  const hdrU = REG.slots.filter((x) => x.opts && x.opts.name === 'conversation.session.header.utilities').pop();
+  const clickU = () => { try { hdrU.comp().props.onClick({ preventDefault() {}, stopPropagation() {} }); } catch (e) { /* 忽略 */ } };
+
+  // 会话 U：已展开，且只有 vA（= 第一个注册的 bottom 视图，等价于线上环境里的 dsh-can-tool）
+  localStore.setItem('dsh-shinki-tools:v1:sess-U', JSON.stringify({ open: true, height: 220, tabOrder: ['vA'], active: 'vA' }));
+  setSession('sess-U'); flushTimersAt(1200);
+  ok(panel.style.display !== 'none', 'U1 记录为展开 ⇒ 面板打开', panel.style.display);
+  ok(!!walkFind(panel, (el) => el.textContent === '视图A'), 'U2 TAB 条里有「视图A」');
+
+  // 用户点 ✕ 关掉该视图
+  const closeBtn = walkFind(panel, (el) => el.dataset && el.dataset.closeId === 'vA');
+  ok(!!closeBtn, 'U3 找到「视图A」的关闭按钮');
+  if (closeBtn) { try { (closeBtn.__listeners.click || []).forEach((f) => f({ stopPropagation() {} })); } catch (e) { ok(false, 'U3 点 ✕ 抛错：' + e.message); } }
+  flushTimersAt(200);
+  const recU = readSess('sess-U');
+  ok(!!recU && Array.isArray(recU.tabOrder) && recU.tabOrder.length === 0, 'U4 关闭后该会话记录里 tabOrder 为空', recU && recU.tabOrder);
+  ok(!!recU && (recU.active === null || recU.active === undefined), 'U5 关闭后 active 为空', recU && recU.active);
+
+  // 收起 → 再展开：不得把 vA 塞回来
+  // ★ 判据不看 DOM（桩里 dataset 与 data-id 属性不联动，删旧 TAB 的 querySelectorAll 在桩里无效），
+  //   改看"被关掉的视图有没有被重新激活"：vA 的 render 一旦被调用就会重新给 A 赋值。
+  A = null;
+  clickU();                       // 收起（等价于用户点收起）
+  clickU();                       // 再展开 → 旧实现在这里会挂载全部 bottom 视图并激活第一个
+  ok(A === null, '★★ U6 展开没有把已关闭的视图重新激活（vA 的 render 未被调用 = 不再冒出 CAN）');
+  ok(!!findIn(body, 'shinki-tools-panel'), 'U7 面板对象仍在（只是没有活动视图）');
+  ok(logs.some((l) => /显示空面板/.test(l)), 'U8 走的是"空面板"分支而不是把视图塞回来（gui.log 可见）');
+
+  // 正常情况仍要能恢复：合法打开一个视图（等价于用户从菜单/＋ 打开）后收起再展开，应恢复它
+  svc.open('vA', 'bottom'); flushTimersAt(1200);
+  ok(panel.style.display !== 'none' && !!walkFind(panel, (el) => el.textContent === '视图A'), '★ U9 有打开的视图时，展开后能正确显示它', panel.style.display);
 }
 
 console.log('\n' + (failed ? `❌ 失败 ${failed} 项` : '✅ 全部通过'));

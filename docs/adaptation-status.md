@@ -100,8 +100,11 @@
 | 项 | 实现 |
 |---|---|
 | 存储 | `localStorage['dsh-shinki-tools:v1:<sessionId>']` = `{open, height, tabOrder, active, values}`（`values` 里放消费方设置与 `tab.meta`） |
-| 会话 key | `ctx.get('uiSession').adapter.current.getSnapshot().key`（**订阅** + 1s 轮询兜底）；解析不到用 `'default'` 并退化为全局行为；启动早期解析成功算"迁移"而非切换 |
-| 新会话默认 | **收起** + 高度 220（对齐 better-sidebar `makeDefaultState`） |
+| 会话 key | `ctx.get('uiSession').adapter.current.getSnapshot().key`（**订阅** + 1s 轮询兜底）；**解析不到 = 没有会话**（返回 `null`，不再退化成 `'default'` 桶） |
+| **全局开关** | **已移除**（2026-10-11）：`localStorage['dsh-shinki-tools.bottomOpen']` 与 `['dsh-shinki-tools.ph']` 不再读写；历史遗留键不再被读取（可自行清理）。面板状态**全部按会话** |
+| **无会话行为** | 不渲染右上角开关按钮；菜单不提供「📥 底部面板」入口、可创建列表不列 📥 目标；`toggleBottomPanel` 直接拒绝展开；面板强制收起 + 让位归零 + 不落盘 |
+| 新会话默认 | **收起** + 高度 220（对齐 better-sidebar `makeDefaultState`）；**没有"继承旧全局状态/高度"的一次性迁移** |
+| 横向定位 | 面板 `left/right` 取会话列 rect；**量不到列时绝不写 `left/right:0`**（那会让面板通栏占满整个视图），改为先隐藏 + 按帧/定时重测（≤15s），列出现后重新定位再显示 |
 | 高度契约 | 夹在 `[120, 可见视口 − 280]` |
 | 写盘 | 每会话一个 200ms 防抖定时器 |
 | 逃生口 | URL 加 `?dsh-shinki-reset` ⇒ 丢弃该会话的面板状态 |
