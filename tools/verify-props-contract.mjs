@@ -898,6 +898,27 @@ console.log('\n=== U. 展开只恢复本会话已打开的视图（不复活被�
   ok(panel.style.display !== 'none', '★★ U7 无视图时展开要**真的显示空面板**（不是按了没反应）', panel.style.display);
   ok(!!walkFind(panel, (el) => el.dataset && el.dataset.addBtn === '1'), '★★ U8 空面板 TAB 条的「＋」可达（用户据此添加视图）');
   ok(/^\d+px$/.test(String(panel.style.height || '')) && panel.style.height !== '0px', '★★ U10 空面板不被上次收起残留的 height:0px 卡住（否则只剩一块空白）', panel.style.height);
+
+  // ★★ 拖动改高 → 收起 → 展开：高度必须原样回来（用户实测：之前的实现把拖好的高度丢了）
+  {
+    svc.open('vA', 'bottom'); flushTimersAt(1200);            // 先有视图，才能拖动
+    const rz = walkFind(panel, (el) => el.getAttribute && el.getAttribute('data-shinki-rz') === '1');
+    ok(!!rz, 'U11 找到拖高条');
+    const h0 = panel.style.height;
+    if (rz) {
+      (rz.__listeners.mousedown || []).forEach((f) => f({ preventDefault() {}, stopPropagation() {}, clientY: 600 }));
+      fireDoc('mousemove', { clientY: 500 });                  // 往上拖 100px ⇒ 变高
+      fireDoc('mouseup', {});
+    }
+    flushTimersAt(200);
+    const hDrag = panel.style.height;
+    ok(parseInt(hDrag, 10) > parseInt(h0, 10), 'U12 拖动确实改高了', h0 + ' -> ' + hDrag);
+    const recDrag = readSess('sess-U');
+    ok(!!recDrag && parseInt(String(recDrag.height), 10) === parseInt(hDrag, 10), 'U13 拖后的高度已写进会话记录', recDrag && recDrag.height);
+    clickU();                                                  // 收起
+    clickU();                                                  // 展开
+    ok(parseInt(panel.style.height, 10) === parseInt(hDrag, 10), '★★ U14 收起→展开后高度原样恢复（不再丢用户调的高度）', hDrag + ' -> ' + panel.style.height);
+  }
   ok(logs.some((l) => /显示空面板/.test(l)), 'U9 走的是"空面板"分支（gui.log 可见）');
 
   // 正常情况仍要能恢复：合法打开一个视图（等价于用户从菜单/＋ 打开）后收起再展开，应恢复它
