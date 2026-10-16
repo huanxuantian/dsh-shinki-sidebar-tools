@@ -8,6 +8,40 @@ DSH 右侧边栏增强（纯客户端、零注入）：
    列出**已注册视图**（尝试从 `ctx.sidebarRightTabs` 枚举）与**内置视图**，点击即 `ctx.sidebarRight.openTab(kind)` 创建。
 3. **指南入口**：额外往 `sidebar.right.tab.guide.entry` 注入一个「创建视图」列表（`+` 打开的就是指南）。
 
+## 安装
+
+### 在官方 DSH 桌面端安装（推荐路径，已在 Windows 实测）
+
+**先确定该客户端启动的是哪个 profile —— 不要用 agent shell 里的 `DSH_HOME` / `DSH_PROFILE_DIR` 判断。**
+官方 DSH 桌面端的启动代码写死了它用的 profile（`@deepseek-ai/dsh-desktop-host/lib/index.js` 的 `main()`）：
+
+```js
+const profile = loadProfileDirectory("dsh", projectDir, installAnchor);
+const application = runProfile({ profile: "desktop", args: ["--no-open", "--port", "19387"] });
+```
+
+即目标是 `~/.dsh/profiles/desktop`（`%USERPROFILE%\.dsh\profiles\desktop`）。机器上若还留着旧的可移植
+（EAC）实例，它用的是另外的 profile（如 `web-desktop`），装到那里对官方客户端完全无效。
+
+```powershell
+& 'E:\DeepSeek Harness\resources\runtime\cli\bin\dsh.cmd' plugin --profile desktop add `
+  file:E:\path\to\dsh-shinki-sidebar-tools
+```
+
+- **登记机制**：包名会被写进 profile 的 `package.json` → `dsh.profile.bundles`，插件自带的
+  `cordis.patch.yml`（`dsh.bundle.patch`）作为 bundle 层生效。手工往 `cordis.patch.yml` 写 `insert`
+  roster 行是**另一种**机制（设置页插件管理器用的），只写 roster 不会被 Loader 挂载。
+- **生效**：官方客户端**热挂载**，通常不需要重启；本插件是纯客户端增强（host 半边为空实现），
+  浏览器半边随页面加载。
+- **依赖**：无。零注入设计 —— 失败不影响宿主。
+- **卸载**：`dsh plugin --profile desktop remove dsh-shinki-sidebar-tools`。
+
+### 通用安装
+
+```sh
+dsh plugin --profile <profile> add link:/绝对路径/dsh-shinki-sidebar-tools   # 本地开发
+```
+
 ## 原理
 
 | 能力 | 手段 |
