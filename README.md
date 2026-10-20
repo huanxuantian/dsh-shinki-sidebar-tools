@@ -518,3 +518,8 @@ setInterval(() => { const d = window.__shinkiDebug?.(); if (d)
 
 另注：该仓库 `lib/client.js` 在客户端运行期间会被占用，`python` 写入常报
 `PermissionError`；**用 .NET `File.WriteAllText` 写入是可行的**，或先卸载插件再写。
+
+### 计划中的功能
+
+- **[临时视图工具（待实现）](docs/temp-views-tool.md)** —— 通过 agent 工具在运行时注册/修改/卸载
+  临时视图，重启后自动消失；用于调试与自检。需求与实现计划见该文档，确认后再动工。
