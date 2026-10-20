@@ -519,7 +519,13 @@ setInterval(() => { const d = window.__shinkiDebug?.(); if (d)
 另注：该仓库 `lib/client.js` 在客户端运行期间会被占用，`python` 写入常报
 `PermissionError`；**用 .NET `File.WriteAllText` 写入是可行的**，或先卸载插件再写。
 
-### 计划中的功能
+### 临时视图工具（已实现）
 
-- **[临时视图工具（待实现）](docs/temp-views-tool.md)** —— 通过 agent 工具在运行时注册/修改/卸载
-  临时视图，重启后自动消失；用于调试与自检。需求与实现计划见该文档，确认后再动工。
+- **[`sidebar_temp_view`](docs/temp-views-tool.md)** —— agent 在运行时注册 / 修改 / 卸载**临时视图**；
+  只存在于本次运行（重启即消失），且**只对创建它的会话可见**。
+- 支持全部形态：`mini`（悬浮）、`right`（右侧栏）、`bottom`（底部栏）、`popup`（全屏/弹出）、
+  `mainView`（会话视图 TAG 页）；`form` 可传数组。
+- 标题自动加 `【临时】` 前缀；内容为纯文本（不执行任何来自参数的内容）。
+- 卸载：`unregister(id)` 单个，或 `unregister(scope:'session')` 当前会话全部。
+- 实现：`lib/temp-views-store.js`（内存 store）+ `lib/temp-views-tool.js`（工具）+
+  `lib/index.js`（路由 `/shinki-sidebar-temp/views`）+ `lib/client.js`（客户端轮询对齐）。
