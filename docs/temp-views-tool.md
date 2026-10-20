@@ -191,3 +191,35 @@ GET /shinki-sidebar-temp/views?session=probe → {"views":[]}   （会话隔离�
 `GET /shinki-sidebar-temp/diag` 返回注入状态、工具注册结果与错误、版本号、
 `lastPollSession`（客户端轮询用的会话键）与 `sessionsWithViews`（有视图的键），
 用于判断"工具没注册"与"会话键不一致"这两类问题。
+
+## 15. 几何（位置/尺寸）与诊断（2026-10-20 补充）
+
+### 参数
+
+`register` / `update` 均支持 `x`、`y`（视口绝对坐标，px）与 `width`、`height`（px）。
+不传则不修改；临时视图属会话绑定，几何随会话状态保存，重启后不保留。
+
+### 实现要点（踩过的三个坑）
+
+1. **必须先写状态、再 miniShow**：`miniShow` 内部会调用 `miniApplyGeometry`，
+   若状态里没有 x/y 就会走默认锚点（右下角），把先前写的样式覆盖掉。
+2. **注册分支必须也调用应用几何**：早期只在 update 分支调用，导致"注册时位置永远在右下角"，
+   而 update 后才生效 —— 表现为"位置总是默认、只有改的时候才跳"。
+3. **同 id 更新必须原地重渲染**：`dispose + registerView` 在 mini 单例里会叠出第二份视图；
+   改为把数据放 `TEMP_VIEWS.data`，按 id 读取并重渲染。
+
+### 实测数据（/diag 的 lastReport）
+
+```json
+want : {"x":500,"y":300,"w":420,"h":260}
+inline   : {"left":"500px","top":"300px","width":"420px","height":"420px"}
+computed : {"position":"fixed","left":"500px","top":"300px"}
+rect : {"x":500,"y":300,"w":420,"h":260}
+```
+
+`rect` 与 `want` 逐项一致 → 位置尺寸生效；只改文本时 `rect` 不变 → 几何保持。
+
+### 诊断开关
+
+`POST /shinki-sidebar-temp/report` 与 `/diag` 的 `lastReport` 用于定位几何问题；
+客户端默认**不回传**，需在 prefs 里置 `debugGeometry: true` 才启用。
