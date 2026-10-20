@@ -1,6 +1,6 @@
 # 需求与实现计划：临时视图工具（sidebar_temp_view）
 
-状态：**需求已确认，尚未实现**（本文只定义需求与方案）
+状态：**已实现并验证**（2026-10-20；实现细节与踩坑见 §14）
 日期：2026-10-20（决策更新）
 
 ## 1. 需求
@@ -153,3 +153,41 @@ const TEMP = {
 
 - 2026-10-20：确认支持全部五种形态；临时视图强制会话绑定且仅当前会话有效；
   标题自动加 `【临时】` 前缀；卸载仅限"单个"或"当前会话全部"。
+
+## 14. 实现与验证记录（2026-10-20）
+
+### 已实现
+
+| 文件 | 作用 |
+|---|---|
+| `lib/temp-views-store.js` | 内存 store（`version` + `Map`），按 `sessionId` 归属；`register/update/unregister/snapshot` |
+| `lib/temp-views-tool.js` | `sidebar_temp_view` 工具；会话 id 取自 `exec.agent.id` |
+| `lib/index.js` | `inject = ['webServer','tools']`；只读路由 `/shinki-sidebar-temp/{views,diag}` |
+| `lib/client.js` | 1.5s 轮询 + 差量对齐；标题加 `【临时】`；mini 固定 `bind:'session'` |
+
+### 端到端验证
+
+```
+GET /shinki-sidebar-temp/diag
+→ {"services":{"tools":true,"webServer":true},
+   "tool":{"registered":true,"error":null},"version":1}
+调用 sidebar_temp_view(register, title=测试A, text=hello, form=mini)
+→ 界面出现悬浮视图，内容 hello
+GET /shinki-sidebar-temp/views?session=probe → {"views":[]}   （会话隔离正确）
+```
+
+### 三个必须记住的契约/坑
+
+1. **`defineTool` 必须提供 `output.render`**，否则注册直接失败：
+   `Cannot read properties of undefined (reading 'render')`。
+2. **`output.schema` 必须是标准 JSON Schema**（`{type:'object', properties:{…}}`），
+   扁平"字段名→schema"会被拒：`unsupported JSON schema: schema.type must be ...`。
+   列表类结果建议序列化成字符串字段（本项目用 `viewsText`），避免 array/nested 校验问题。
+3. **工具会热刷新进已有会话**（DSH 有 `toolsChanged`），不必新建会话；
+   但宿主侧代码只在客户端启动时加载，改 `lib/index.js` 必须重启客户端。
+
+### 诊断端点
+
+`GET /shinki-sidebar-temp/diag` 返回注入状态、工具注册结果与错误、版本号、
+`lastPollSession`（客户端轮询用的会话键）与 `sessionsWithViews`（有视图的键），
+用于判断"工具没注册"与"会话键不一致"这两类问题。
