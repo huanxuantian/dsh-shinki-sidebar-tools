@@ -223,3 +223,23 @@ rect : {"x":500,"y":300,"w":420,"h":260}
 
 `POST /shinki-sidebar-temp/report` 与 `/diag` 的 `lastReport` 用于定位几何问题；
 客户端默认**不回传**，需在 prefs 里置 `debugGeometry: true` 才启用。
+
+## 16. 各形态的打开方式（实测）
+
+注册只是"登记"，部分形态还需要**主动打开**才会显示：
+
+| form | 注册路径 | 打开方式 |
+|---|---|---|
+| `mini` | `MINI` 悬浮窗 | 注册后 `miniShow(id)` + 几何应用 |
+| `mainView` | `slots.inject('conversation.view')` | 自动出现在会话视图 TAG 页 |
+| `popup` | `VIEW_FORMS.popup` 原为空实现 | 注册后调用 `openPopupView(id)` |
+| `bottom` | `registerRightRail` + `bpPanelMount` | 自动挂到底部栏；**注意**会同时在右栏登记入口 |
+| `right` | `registerRightRail` | 仅登记 tab；需 `openView(ctx, id, 'right')`（内部 `sidebarRight.openTab`）才会展开右栏 |
+
+另两条实现要点：
+
+1. 临时视图必须用**插件自身 ctx** 注册（`PLUGIN_CTX`），
+   `adapterCtx` 里没有 `sidebarRightTabs` / `sidebarRight`，会导致 `waitFor` 永远等不到、
+   静默不注册（表现为"点了也打不开"）。
+2. 客户端诊断：`tempViewLog()` 会把注册结果/异常回传到 `POST /shinki-sidebar-temp/report`，
+   在 `/diag` 的 `logs` 里可查；用于定位"注册静默失败"。
