@@ -1,6 +1,6 @@
 {
   "name": "dsh-shinki-sidebar-tools",
-  "version": "0.2.3",
+  "version": "0.2.4",
   "description": "DSH 右侧边栏增强：① tab 条可滚动（可见细滚动条 + 放开触摸平移）；② 在「+」控件区右键弹出「创建视图」菜单（列出已注册视图与内置视图），并往「+」打开的指南里注入创建入口。零注入、纯客户端、失败不影响宿主。",
   "type": "module",
   "main": "lib/index.js",
