@@ -1,6 +1,6 @@
 # 需求与实现计划：临时视图工具（sidebar_temp_view）
 
-状态：**已实现并验证**（2026-10-20；实现细节与踩坑见 §14）
+状态：**已实现并验证**（2026-10-20；实现细节与踩坑见 §14；2026-10-23 扩展 `html`/`component` 内容形态，见 §17）
 日期：2026-10-20（决策更新）
 
 ## 1. 需求
@@ -22,11 +22,11 @@
 | **绑定** | 默认且**强制会话绑定**：临时视图带 `sessionId`，仅在该会话激活时渲染 |
 | **标题** | 统一加前缀 **`【临时】`** + 用户给的纯文本名字（前缀由插件强制添加，工具参数里不必写） |
 | **卸载** | 仅两种：`unregister(id)` 单个；`unregister(scope:'session')` 当前会话全部。**不提供**跨会话的 `'*'` |
-| **内容** | 标题 + 纯文本（不接受 HTML/JS，不执行任何来自参数的内容） |
+| **内容** | 三种内容形态（`kind`，与 `form` 停靠形态正交）：`text`（默认，纯文本）/ `html`（sandbox iframe）/ `component`（已注册客户端组件）。2026-10-23 扩展，见 §17 |
 
 ## 3. 非目标
 
-- 不注入任意 JavaScript/HTML（只接受声明式数据）；
+- 不注入任意 JavaScript/HTML（只接受声明式数据；`html` 仅进 sandbox iframe，宿主不解析、不执行）；
 - 不持久化（重启即消失是硬要求）；
 - 不替代正式插件的 `registerView`。
 
@@ -85,7 +85,10 @@ agent → 工具 sidebar_temp_view {action, ...}
 | `id` | string | update/unregister 必填；register 可省略（自动 `tmp-<n>`） | 视图 id，统一 `tmp-` 前缀 |
 | `title` | string | register 必填 | 纯文本名字；插件渲染时自动加 `【临时】` |
 | `text` | string | 否 | 纯文本内容（等宽、多行） |
-| `form` | `mini｜right｜bottom｜popup｜mainView` 或其数组 | 否 | 默认 `mini` |
+| `kind` | `text｜html｜component` | 否 | 内容形态；缺省按传入内容推断（component > html > text） |
+| `html` | string | 否 | HTML 字符串（kind=html，≤64KB 截断；sandbox iframe，无同源权限） |
+| `component` | JSON string | 否 | `{"pluginId":"…","componentId":"…","props":{…}}`（kind=component；props ≤8KB） |
+| `form` | `mini｜right｜bottom｜popup｜mainView` 或其数组 | 否 | 停靠形态，默认 `mini` |
 | `width`/`height` | number | 否 | 仅 `mini`；受 `MINI_TIERS` 上限约束 |
 | `visible` | boolean | 否 | 默认 true（仅 `mini` 有意义） |
 | `scope` | `session` | unregister 时可选 | 卸载当前会话全部临时视图 |
@@ -103,7 +106,7 @@ agent → 工具 sidebar_temp_view {action, ...}
 ```js
 const TEMP = {
   version: 0,
-  views: new Map(),   // id -> { id, sessionId, title, text, form, width, height, visible, version }
+  views: new Map(),   // id -> { id, sessionId, title, kind, text, html, component, form, width, height, visible, version }
 };
 ```
 
@@ -122,7 +125,11 @@ const TEMP = {
 ## 10. 安全
 
 - 只接受字符串/数字/布尔/枚举；
-- 文本按纯文本渲染，不解析 HTML/Markdown；
+- `text` 按纯文本渲染，不解析 HTML/Markdown；
+- `html` 只进 `<iframe sandbox="allow-scripts">`（**不给** `allow-same-origin`）：页面处于独立源，
+  不能读取宿主 storage/cookie、不能同源 fetch 插件路由；`srcDoc` 内容由 agent 提供，等价于沙箱演示页；
+- `component` 只能引用**已由插件注册**的组件（`window.__shinkiTempComponents`），
+  不接受任意模块路径/源码；`component.props` 仅接受普通对象且 ≤8KB；
 - 尺寸上限沿用 `MINI_TIERS`；
 - 不写文件、不写 localStorage。
 
@@ -243,3 +250,64 @@ rect : {"x":500,"y":300,"w":420,"h":260}
    静默不注册（表现为"点了也打不开"）。
 2. 客户端诊断：`tempViewLog()` 会把注册结果/异常回传到 `POST /shinki-sidebar-temp/report`，
    在 `/diag` 的 `logs` 里可查；用于定位"注册静默失败"。
+
+## 17. 内容形态扩展：html / component（2026-10-23）
+
+背景：临时视图原来只能渲染纯文本，做不了"完整交互组件"（按钮、输入、实时刷新）。
+用户要求增加 `html` 与 `component` 两种形态。
+
+### 关键取舍：为什么 `component` 才是调试形态
+
+`html` 用 sandbox iframe（**不给** `allow-same-origin`）最安全，但浏览器会把 `srcdoc` 页面放进**独立源**：
+
+- ❌ 不能 `fetch('/shinki-ble-tool/...')`（同源策略拦截）⇒ 调不到插件路由；
+- ❌ 拿不到宿主 `localStorage` / cookie；
+- ✅ 只能做纯展示、静态演示、按 props 拼好的结果页。
+
+`component` 直接由宿主 React 渲染（同源），组件可自由 fetch 插件路由 ⇒ **真正适合调试**。
+因此两者都保留：`html` 给一次性展示，`component` 给交互自测。
+
+### 契约（与 `form` 正交）
+
+| kind | 字段 | 渲染 | 同源 |
+|---|---|---|---|
+| `text`（默认） | `text`（≤4000 字符） | 等宽多行 | — |
+| `html` | `html`（≤64KB，超出截断） | `iframe[sandbox="allow-scripts"]` + `srcdoc` | ❌ |
+| `component` | `component: {pluginId, componentId, props?}` | 查注册表 → `createElement(factory, props)` | ✅ |
+
+- `text` / `html` / `component` **三选一**（工具层校验，同时给多个直接报错）；
+- 未显式给 `kind` 时按内容推断：`component > html > text`；
+- `update` 可切换 `kind`，**不要求重传旧内容**（旧内容保留在 store 里，便于来回切换）；
+- `component.props` 必须是普通对象、序列化后 ≤8KB；
+- 缺 `html` / 缺 `component` 时对应 kind 直接拒绝，不静默降级。
+
+### 跨插件组件注册表
+
+注册表在 `window.__shinkiTempComponents`（不是模块内变量）——各插件独立打包、不共享模块图：
+
+```js
+// 任何插件（浏览器半边，apply 时执行一次即可）
+const reg = (window.__shinkiTempComponents = window.__shinkiTempComponents || { defs: [] });
+if (!Array.isArray(reg.defs)) reg.defs = [];
+// 若本插件可能先于 sidebar-tools 加载，需补 get/register 的幂等初始化，见下
+reg.register({ pluginId: 'my-plugin', componentId: 'my-panel', label: '调试面板', factory: MyPanel });
+```
+
+- **加载顺序无关**：谁先加载谁初始化方法；组件在**渲染时**查找；
+- 组件 props = `component.props` + `{ tempViewId, tempPlugin }`；
+- 找不到 → 视图内显示「未注册的组件：pid:cid」+ 注册提示（不白屏）；
+- 组件渲染抛错 → 错误边界接住，仅该视图显示错误（不牵连承载面板）；
+- 快照变化 → 客户端 `tempNotify()` 强制重渲染已挂载的临时视图
+  （订阅在 body 的 `useEffect` 里注册；不再依赖 mini/panel 各自的刷新逻辑）。
+
+### 诊断
+
+- `GET /shinki-sidebar-temp/views?session=…` 里可直接看到 `kind` / `html` 长度 / `component`；
+- 组件未注册时视图内的提示会带上期望的 `pluginId:componentId`；
+- 契约自检：`node tools/verify-temp-views.mjs`。
+
+### 安全边界（必须守住）
+
+- `html` **不得**升级为 `allow-same-origin`（那样等于把宿主源交给 agent 生成的页面）；
+- `component` 只查注册表，**不接受**模块路径、URL、源码字符串；
+- 宿主只做结构与长度校验，不解析 HTML、不执行任何内容。

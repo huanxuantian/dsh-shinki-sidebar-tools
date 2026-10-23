@@ -523,9 +523,49 @@ setInterval(() => { const d = window.__shinkiDebug?.(); if (d)
 
 - **[`sidebar_temp_view`](docs/temp-views-tool.md)** —— agent 在运行时注册 / 修改 / 卸载**临时视图**；
   只存在于本次运行（重启即消失），且**只对创建它的会话可见**。
-- 支持全部形态：`mini`（悬浮）、`right`（右侧栏）、`bottom`（底部栏）、`popup`（全屏/弹出）、
+- 支持全部**停靠形态**（`form`）：`mini`（悬浮）、`right`（右侧栏）、`bottom`（底部栏）、`popup`（全屏/弹出）、
   `mainView`（会话视图 TAG 页）；`form` 可传数组。
-- 标题自动加 `【临时】` 前缀；内容为纯文本（不执行任何来自参数的内容）。
+- 支持三种**内容形态**（`kind`，与 `form` 正交）：
+
+  | kind | 内容 | 渲染方式 | 能调插件路由 |
+  |---|---|---|---|
+  | `text`（默认） | 纯文本 | 等宽多行 | — |
+  | `html` | HTML 字符串（≤64KB） | `<iframe sandbox="allow-scripts" srcdoc>`（**无 allow-same-origin**） | ❌ 独立源，不能同源 fetch |
+  | `component` | `{pluginId, componentId, props}` | 由**已注册的客户端组件**渲染 | ✅ 与宿主同源，适合完整交互/自测 |
+
+- 标题自动加 `【临时】` 前缀；`text` / `html` / `component` 三选一。
+- `html` 依赖浏览器对 `about:srcdoc` iframe 的支持；若宿主页面 CSP 限制 `frame-src` 可能不显示 ⇒ 此时改用 `component`。
 - 卸载：`unregister(id)` 单个，或 `unregister(scope:'session')` 当前会话全部。
 - 实现：`lib/temp-views-store.js`（内存 store）+ `lib/temp-views-tool.js`（工具）+
   `lib/index.js`（路由 `/shinki-sidebar-temp/views`）+ `lib/client.js`（客户端轮询对齐）。
+- 契约自检：`node tools/verify-temp-views.mjs`（三种 kind、参数互斥、会话隔离、版本短路）。
+
+#### `component` 形态：跨插件注册组件
+
+组件注册表挂在 **`window.__shinkiTempComponents`**（各插件各自打包、不共享模块图，谁先加载谁初始化，
+注册顺序无关；渲染时按 `pluginId:componentId` 查找）。消费方插件在**浏览器半边**注册一次：
+
+```js
+window.__shinkiTempComponents = window.__shinkiTempComponents || { defs: [] };
+window.__shinkiTempComponents.register({
+  pluginId: 'my-plugin',            // 与工具参数 component.pluginId 一致
+  componentId: 'my-debug-panel',    // 与 component.componentId 一致
+  label: '调试面板',
+  factory: MyDebugPanel,            // React 组件；props = component.props + { tempViewId, tempPlugin }
+});
+```
+
+> 注意：**先加载的插件负责初始化方法**（`get/register`）。若你的插件可能先于 sidebar-tools 加载，
+> 请照 `dsh-shinki-ble-python/lib/client.js` 的 `tempComponentRegistry()` 写法补一份幂等初始化，
+> 不要只写 `window.__shinkiTempComponents.register(...)`（此时对象还不存在）。
+
+agent 侧登记（示例）：
+
+```
+sidebar_temp_view action=register title="FindMy 调试" form=bottom kind=component \
+  component='{"pluginId":"dsh-shinki-ble-tool","componentId":"findmy-scan","props":{"seconds":10,"live":true}}'
+```
+
+- 找不到组件时视图内显示「未注册的组件：pid:cid」+ 注册方式提示，**不会白屏**；
+- 组件渲染抛错由错误边界接住，只在该视图内显示错误，不牵连承载面板；
+- 快照变化时客户端**强制重渲染**已挂载的临时视图（不依赖各停靠形态自身的刷新机制）。
