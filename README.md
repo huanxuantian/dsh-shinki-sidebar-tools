@@ -534,6 +534,9 @@ setInterval(() => { const d = window.__shinkiDebug?.(); if (d)
   | `component` | `{pluginId, componentId, props}` | 由**已注册的客户端组件**渲染 | ✅ 与宿主同源，适合完整交互/自测 |
 
 - 标题自动加 `【临时】` 前缀；`text` / `html` / `component` 三选一。
+- **浮窗尺寸**：`mini` 支持 `x/y/width/height` 参数（宽≥160、高≥60，超出视口自动收敛）；
+  `component`/`html` 不给尺寸时默认 **360×240**；右下角还能手动拖拽缩放，松手后按「会话+视图」记住。
+- **头部不遮挡**：`tmp-` 临时浮窗的控件条常驻，正文预留 22px，内容不会被盖住。
 - `html` 依赖浏览器对 `about:srcdoc` iframe 的支持；若宿主页面 CSP 限制 `frame-src` 可能不显示 ⇒ 此时改用 `component`。
 - 卸载：`unregister(id)` 单个，或 `unregister(scope:'session')` 当前会话全部。
 - 实现：`lib/temp-views-store.js`（内存 store）+ `lib/temp-views-tool.js`（工具）+

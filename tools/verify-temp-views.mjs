@@ -44,6 +44,14 @@ async function main() {
   let r = await run({ action: 'register', title: '文本', text: 'a\nb' });
   ok(r.ok === true && r.kind === 'text', 'register 默认 kind=text', JSON.stringify(r));
 
+  // ── 几何参数（x/y/width/height 必须能透过工具进入 store）──
+  r = await run({ action: 'register', title: '带尺寸', text: 'x', form: 'mini', x: 120, y: 80, width: 420, height: 260 });
+  const sized = store.state.views.get(r.id);
+  ok(sized.x === 120 && sized.y === 80 && sized.width === 420 && sized.height === 260,
+    'x/y/width/height 存入视图（工具参数不丢）', JSON.stringify({ x: sized.x, y: sized.y, w: sized.width, h: sized.height }));
+  r = await run({ action: 'update', id: r.id, width: 500, height: 300 });
+  ok(store.state.views.get(r.id).width === 500 && store.state.views.get(r.id).height === 300, 'update 可改尺寸');
+
   // ── html 推断 + 截断 ──
   const big = '<b>x</b>'.repeat(20000);   // 140000 字符 > 64KB
   r = await run({ action: 'register', title: 'html', html: big });

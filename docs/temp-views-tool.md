@@ -89,7 +89,8 @@ agent → 工具 sidebar_temp_view {action, ...}
 | `html` | string | 否 | HTML 字符串（kind=html，≤64KB 截断；sandbox iframe，无同源权限） |
 | `component` | JSON string | 否 | `{"pluginId":"…","componentId":"…","props":{…}}`（kind=component；props ≤8KB） |
 | `form` | `mini｜right｜bottom｜popup｜mainView` 或其数组 | 否 | 停靠形态，默认 `mini` |
-| `width`/`height` | number | 否 | 仅 `mini`；受 `MINI_TIERS` 上限约束 |
+| `x`/`y` | number | 否 | 仅 `mini`：浮窗左上角视口坐标（px） |
+| `width`/`height` | number | 否 | 仅 `mini`：自定义尺寸（宽≥160、高≥60，视口内收敛）；不给时 component/html 默认 360×240 |
 | `visible` | boolean | 否 | 默认 true（仅 `mini` 有意义） |
 | `scope` | `session` | unregister 时可选 | 卸载当前会话全部临时视图 |
 
@@ -208,7 +209,23 @@ GET /shinki-sidebar-temp/views?session=probe → {"views":[]}   （会话隔离�
 ### 参数
 
 `register` / `update` 均支持 `x`、`y`（视口绝对坐标，px）与 `width`、`height`（px）。
-不传则不修改；临时视图属会话绑定，几何随会话状态保存，重启后不保留。
+**2026-10-26 起工具 schema 才真正声明这四个参数**（此前只有 store 支持、agent 传不进来，
+表现为"临时窗口大小怎么设都是默认值"）。不传则不修改；临时视图属会话绑定，
+几何随会话状态保存，重启后不保留。
+
+### 尺寸与头部（2026-10-26 修正）
+
+- **尺寸**：mini 浮窗新增自定义尺寸 `w/h`（存在 mini 状态里，按「会话 + 视图」）：
+  - 优先级：自定义 `w/h` > 规格档（`tier`）> 紧凑条；
+  - 上下限：宽 ≥160、高 ≥60，且不超过视口 −8（`miniSizeLimits()`）；
+  - 右下角拖动缩放：`data-shinki-mini-resize` 把手，松手写回 `w/h`（点规格档/紧凑按钮会清掉自定义尺寸）；
+  - **几何签名**：只有宿主返回的 `x/y/width/height` **变化**时才写 mini 状态，
+    否则用户手动拖拽/缩放后，下一次快照（改标题/文本）会被旧几何覆盖回去。
+- **默认尺寸**：`component` / `html` 临时视图首次注册且未给尺寸 ⇒ **360×240**（不再是 240×80）；
+  `text` 仍保持 240×80 紧凑条。
+- **头部遮挡**：临时视图的浮窗（id 以 `tmp-` 前缀识别）⇒ 控件条**常驻**，
+  且正文容器 `padding-top: 22px` 让出控件条高度，任何内容都不会被盖住。
+  其它插件的迷你条（如音乐）沿用"悬停才显示、消费方自己让位"的旧行为。
 
 ### 实现要点（踩过的三个坑）
 
