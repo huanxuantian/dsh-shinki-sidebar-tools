@@ -35,6 +35,11 @@ async function main() {
   const tool = toolRef.current;
   const run = (args, e = exec) => tool.execute(args, e);
 
+  // ── render 契约：签名是 (args, value)，只写一个参数会回显 args（线上踩过）──
+  const rendered = tool.output.render({ action: 'list' }, { ok: true, version: 7, viewsText: '[]' });
+  ok(rendered.length === 1 && rendered[0].type === 'text', 'output.render 返回 text 项');
+  ok(JSON.parse(rendered[0].text).version === 7, 'output.render 渲染的是 value 而不是 args', rendered[0].text);
+
   // ── text（默认）──
   let r = await run({ action: 'register', title: '文本', text: 'a\nb' });
   ok(r.ok === true && r.kind === 'text', 'register 默认 kind=text', JSON.stringify(r));

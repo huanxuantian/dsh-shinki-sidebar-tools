@@ -183,14 +183,18 @@ GET /shinki-sidebar-temp/diag
 GET /shinki-sidebar-temp/views?session=probe → {"views":[]}   （会话隔离正确）
 ```
 
-### 三个必须记住的契约/坑
+### 四个必须记住的契约/坑
 
 1. **`defineTool` 必须提供 `output.render`**，否则注册直接失败：
    `Cannot read properties of undefined (reading 'render')`。
 2. **`output.schema` 必须是标准 JSON Schema**（`{type:'object', properties:{…}}`），
    扁平"字段名→schema"会被拒：`unsupported JSON schema: schema.type must be ...`。
    列表类结果建议序列化成字符串字段（本项目用 `viewsText`），避免 array/nested 校验问题。
-3. **工具会热刷新进已有会话**（DSH 有 `toolsChanged`），不必新建会话；
+3. **`output.render` 的签名是 `(args, value)`**，不是 `(value)`。只写一个参数会拿到 args，
+   表现为"工具结果回显调用参数"（2026-10-26 实测：`action:'list'` 回显 `{"action":"list"}`，
+   而视图其实已正常创建/删除）。正确写法参照 BLE 插件的 `textRender`：
+   `render: (_args, value) => [{ type: 'text', text: fn(value) }]`。
+4. **工具会热刷新进已有会话**（DSH 有 `toolsChanged`），不必新建会话；
    但宿主侧代码只在客户端启动时加载，改 `lib/index.js` 必须重启客户端。
 
 ### 诊断端点
