@@ -298,10 +298,14 @@ reg.register({ pluginId: 'my-plugin', componentId: 'my-panel', label: '调试面
 ```
 
 - **加载顺序无关**：谁先加载谁初始化方法；组件在**渲染时**查找；
+- **注册后必须唤醒视图**：如果本插件先初始化了注册表，`register` 实现里要调用
+  `window.__shinkiTempViewNotify?.()`（sidebar-tools 加载时会把它设成 `tempNotify`）。
+  否则**刷新页面**时（宿主里仍有 component 临时视图）视图可能先渲染、组件后注册，
+  面板会停在「未注册的组件」直到下一次快照变化。BLE 插件的 `tempComponentRegistered()` 就是这一句。
 - 组件 props = `component.props` + `{ tempViewId, tempPlugin }`；
 - 找不到 → 视图内显示「未注册的组件：pid:cid」+ 注册提示（不白屏）；
 - 组件渲染抛错 → 错误边界接住，仅该视图显示错误（不牵连承载面板）；
-- 快照变化 → 客户端 `tempNotify()` 强制重渲染已挂载的临时视图
+- 快照变化 + 组件表变化 → 客户端 `tempNotify()` 强制重渲染已挂载的临时视图
   （订阅在 body 的 `useEffect` 里注册；不再依赖 mini/panel 各自的刷新逻辑）。
 
 ### 诊断
