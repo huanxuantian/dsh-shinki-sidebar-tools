@@ -587,3 +587,16 @@ sidebar_temp_view action=register title="FindMy 调试" form=bottom kind=compone
 ```
 
 踩坑记录：FindMy 视图（BLE 插件）与临时视图 `component` 形态的容器都曾漏写 `overflow: 'hidden'`，表现为"滚动落在最外层"。对应说明见 `dsh-shinki-ble-python/docs/findmy-dev-notes.md` 第 10 节。
+### 强制 CSS（`!important`）说明
+
+本插件对承载面板视图的宿主注入：
+
+```css
+#shinki-tools-panel [data-shinki-view-body] > *,
+#shinki-tools-detached [data-shinki-view-body] > * { height: auto !important; min-height: 100%; overflow: visible !important; }
+```
+
+- 目的是让**面板整体滚动**、视图按内容撑高；
+- 副作用：经 `ctx.shinkiViews.register` 注册的插件视图**无法**用自己的根节点承接内部滚动（`overflow:hidden` 会被覆盖成 `visible`）；
+- 插件侧绕行：外层普通 div 承接规则，内层 `position:absolute; inset:0` 铺满宿主 body 自行滚动；
+- 长期方案（待评估）：只对内置面板视图生效，并提供 `data-shinki-view-selfscroll` 之类的 opt-out 属性。详见 `dsh-shinki-ble-python/docs/findmy-dev-notes.md` 第 11 节。
