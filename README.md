@@ -572,3 +572,18 @@ sidebar_temp_view action=register title="FindMy 调试" form=bottom kind=compone
 - 找不到组件时视图内显示「未注册的组件：pid:cid」+ 注册方式提示，**不会白屏**；
 - 组件渲染抛错由错误边界接住，只在该视图内显示错误，不牵连承载面板；
 - 快照变化时客户端**强制重渲染**已挂载的临时视图（不依赖各停靠形态自身的刷新机制）。
+
+## 容器滚动约定（视图宿主必读）
+
+任何承载插件视图的容器都必须写 `overflow: 'hidden'`，否则子视图的 `height: 100%` 会被内容撑破，导致"表格变长后整个视图跟着滚动"。
+
+```js
+// 容器（shinkiViews 宿主 / 临时视图组件容器 / mini 悬浮窗）
+{ display: 'flex', flexDirection: 'column', height: '100%', minHeight: 0, overflow: 'hidden' }
+// 视图内滚动区
+{ flex: '1 1 auto', minHeight: 0, overflow: 'auto' }
+// 视图内固定区
+{ flex: '0 0 auto', maxHeight: '38%', overflow: 'auto' }
+```
+
+踩坑记录：FindMy 视图（BLE 插件）与临时视图 `component` 形态的容器都曾漏写 `overflow: 'hidden'`，表现为"滚动落在最外层"。对应说明见 `dsh-shinki-ble-python/docs/findmy-dev-notes.md` 第 10 节。
