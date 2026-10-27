@@ -599,4 +599,4 @@ sidebar_temp_view action=register title="FindMy 调试" form=bottom kind=compone
 - 目的是让**面板整体滚动**、视图按内容撑高；
 - 副作用：经 `ctx.shinkiViews.register` 注册的插件视图**无法**用自己的根节点承接内部滚动（`overflow:hidden` 会被覆盖成 `visible`）；
 - 插件侧绕行：外层普通 div 承接规则，内层 `position:absolute; inset:0` 铺满宿主 body 自行滚动；
-- 长期方案（待评估）：只对内置面板视图生效，并提供 `data-shinki-view-selfscroll` 之类的 opt-out 属性。详见 `dsh-shinki-ble-python/docs/findmy-dev-notes.md` 第 11 节。
+- **opt-out（已实现）**：视图根节点加 `data-shinki-view-selfscroll="1"` 即被排除在该规则之外，由视图自己负责滚动；不带该属性时行为不变（面板整体滚动）。详见 `dsh-shinki-ble-python/docs/findmy-dev-notes.md` 第 11 节。
