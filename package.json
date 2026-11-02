@@ -1,17 +1,44 @@
 {
   "name": "dsh-shinki-sidebar-tools",
   "version": "0.2.6",
-  "description": "DSH 右侧边栏增强：① tab 条可滚动（可见细滚动条 + 放开触摸平移）；② 在「+」控件区右键弹出「创建视图」菜单（列出已注册视图与内置视图），并往「+」打开的指南里注入创建入口。零注入、纯客户端、失败不影响宿主。",
+  "description": "DSH 侧栏增强与组件工具箱：① 侧栏 tab 条可滚动（细滚动条 + 触摸平移）；② 「+」控件区右键「创建视图」菜单并注入指南入口；③ 临时视图工具 sidebar_temp_view 支持 text/html/component 三种内容形态（html 走 sandbox iframe，component 走跨插件组件注册表）；④ 授权请求右下角浮层（最多 N 条、新下旧上、停留可配、点击经 uiWorkspace.openSession 跳转会话，默认关闭，设置页可开关并持久化到 plugin-data）；⑤ mini 悬浮窗与视图自滚动 opt-out（data-shinki-view-selfscroll）。零注入设计，失败不影响宿主。",
   "type": "module",
   "main": "lib/index.js",
-  "exports": { ".": "./lib/index.js", "./client": "./lib/client.js", "./package.json": "./package.json" },
-  "dsh": {
-    "bundle": { "patch": "./cordis.patch.yml" },
-    "client": { "inject": ["@deepseek-ai/dsh-client-modules", "@deepseek-ai/dsh-client-locale"], "platform": "web" }
+  "exports": {
+    ".": "./lib/index.js",
+    "./client": "./lib/client.js",
+    "./package.json": "./package.json"
   },
-  "files": ["lib", "cordis.patch.yml", "README.md"],
-  "keywords": ["dsh", "dsh-plugin", "sidebar", "scroll", "tabs", "view"],
+  "dsh": {
+    "bundle": {
+      "patch": "./cordis.patch.yml"
+    },
+    "client": {
+      "inject": [
+        "@deepseek-ai/dsh-client-modules",
+        "@deepseek-ai/dsh-client-locale"
+      ],
+      "platform": "web"
+    }
+  },
+  "files": [
+    "lib",
+    "cordis.patch.yml",
+    "README.md"
+  ],
+  "keywords": [
+    "dsh",
+    "dsh-plugin",
+    "sidebar",
+    "scroll",
+    "tabs",
+    "view"
+  ],
   "license": "Apache-2.0",
-  "engines": { "node": ">=20" },
-  "scripts": { "test": "node --test" }
+  "engines": {
+    "node": ">=20"
+  },
+  "scripts": {
+    "test": "node --test"
+  }
 }
