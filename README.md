@@ -1,623 +1,200 @@
 # dsh-shinki-sidebar-tools
 
-DSH 右侧边栏增强（零注入设计）：
+DSH Web 的**侧栏增强与多形态视图工具箱**：挂在官方右侧边栏 tab 条、会话头部与自绘底部面板三处，
+补上「视图被挤掉、横向看不到」的可达性问题；同时作为 `ctx.shinkiViews` 适配层，
+让其它插件**一句声明**即可落到底部栏 / 官方右栏 / 主视图 / 弹窗 / 迷你窗。
 
-1. **tab 条可滚动**：原样式是 `overflow-x:auto` 但 `scrollbar-width:none` + `touch-action:none`（能滚却看不见、摸不着）。
-   本插件加**可见细滚动条**并放开触摸平移，支持触控板两指 / 滚轮 / Shift+滚轮 / 拖滚动条。
-2. **「≡」全部视图**：右下角固定一个 `≡` 浮层按钮，枚举各 tab 条里的全部 tab，点击即滚到它并模拟点击激活；
-   同一菜单还列出**本插件注册的可创建视图**（带注册目标徽标）、`📥 底部面板` 开关、迷你 / 悬停视图与独立弹窗分区。
-   （原「右键弹出创建视图菜单」的 DOM hack 已按用户要求移除，不再改写页面右键行为。）
-3. **指南入口**：额外往 `sidebar.right.tab.guide.entry` 注入一个「创建视图」列表（`+` 打开的就是指南）。
-4. **临时视图**：agent 工具 `sidebar_temp_view` 在当前会话注册 / 修改 / 卸载临时视图，支持 text / html / component 三种内容形态（见下文）。
-5. **授权浮层**：右下角浮层提醒待审批请求，默认关闭、设置页可开关（见下文）。
+范围声明：不接管官方侧栏实现、不改宿主代码；任何能力缺失只降级、只 `console.warn`，不阻塞宿主启动。
 
-## 安装
+---
 
-### 在官方 DSH 桌面端安装（推荐路径，已在 Windows 实测）
+## 功能
 
-**先确定该客户端启动的是哪个 profile —— 不要用 agent shell 里的 `DSH_HOME` / `DSH_PROFILE_DIR` 判断。**
-官方 DSH 桌面端的启动代码写死了它用的 profile（`@deepseek-ai/dsh-desktop-host/lib/index.js` 的 `main()`）：
+| 区域 | 能力 |
+|---|---|
+| tab 条滚动 | 覆盖 `[class*="_stripTabs_"]`：`scrollbar-width:thin`、6px 可见滚动条、`touch-action:auto`，支持触控板 / 滚轮 / 拖滚动条 |
+| 会话头部开关 | 在 `conversation.session.header.utilities` 注册 28×28 圆形按钮（▤ 底部栏 / ☰ 全部视图），无会话时不渲染，图标随面板状态同步 |
+| 「≡」全部视图 | 右下角 FAB 枚举所有 tab 条里的 tab（带 `#序号`），点击 `scrollIntoView` 后模拟 click 激活；同一菜单含可创建视图（按插件分组、可折叠、带目标徽标）、底部面板开关、迷你视图与弹窗分区 |
+| 指南入口 | 往 `sidebar.right.tab.guide.entry` 注入「创建视图」列表（「+」打开的就是指南） |
+| 视图适配层 | `ctx.shinkiViews.register()`：`bottom` / `right` / `mainView` / `popup` / `mini` 五种停靠形态，统一 props，逐形态降级 |
+| 底部面板 | 自绘 `#shinki-tools-panel`（挂 body 下，`z-index:100`）：TAB 条 + `＋` 下拉 + 拖拽握把 + 尺寸调整，状态按会话隔离 |
+| 迷你 / 悬停窗 | 默认 240×80 紧凑条锚右下角（避开 FAB），可切 240×240 / 400×400 / 500×500，可拖动、缩放、调透明度 |
+| 临时视图 | agent 工具 `sidebar_temp_view`：`register` / `update` / `unregister` / `list`，内容形态 `text` / `html` / `component`，`tmp-` 前缀、按会话归属、仅存内存 |
+| 授权浮层 | 采集 `approval/asked` 进环形缓冲（`max 5 + 2`），右下角 `#shinki-toast-root` 提醒，点击经 `uiWorkspace.openSession` 跳会话 |
+| 设置页 | `settings.section` 注册「侧栏工具」：浮层开关 / 最多条数 / 停留时长，写入 `plugin-data/dsh-shinki-sidebar-tools/toast.json` |
 
-```js
-const profile = loadProfileDirectory("dsh", projectDir, installAnchor);
-const application = runProfile({ profile: "desktop", args: ["--no-open", "--port", "19387"] });
+---
+
+## 核心设计
+
+**零注入 + 能力探测。** 浏览器半边不做服务注入（`exports.inject = []`），服务一律 `ctx.get()` 取、失败即跳过；
+host 半边只 `inject: ['webServer', 'tools']`。任何一步异常都只 `console.warn`，宿主照常启动。
+`ctx.shinkiViews` 用 `ctx.provide()` 声明，直接赋值会抛 `without provide`。
+
+**一句声明，多形态承载。** 消费方只调 `ctx.shinkiViews.register({ id, title, render, targets, mini, background })`，
+适配层按 `targets` 落到各形态：`bottom` 与 `right` 共用同一段注册（同 id 自动去重），
+`mainView` 走官方 `conversation.view` 槽位，`popup` 默认**面板内全屏承载**（真 `window.open`
+在本宿主 QtWebEngine 下会被当成本页导航），`mini` 用独立 React root 单独实现。
+`CONTRACT_VERSION = 3`，承诺同时支持 N 与 N-1；一律 `typeof fn === 'function'` 实测，不看版本号。
+
+**稳定 props 契约。** 每个形态都拿得到 `container` / `form` / `close()` / `setTitle()` / `isDetached`；
+`mini` 额外有 `tier` / `compact` / `width` / `height` / `maxWidth` / `maxHeight` /
+`setTier` / `setCompact` / `setOpacity`。better-sidebar 口径的 `visible` / `scope` / `tab` / `store`
+也由本层合成：`tab.meta`、`store.get/set` 落在**按会话状态**，`store.getPrefs/setPrefs` 为全局。
+
+**数据面只有两条只读链路。** 临时视图：宿主内存 store + `GET /shinki-sidebar-temp/views`，
+客户端 1.5s 轮询并按 `version` 差量；授权提醒：`session/event` → 环形缓冲 →
+`GET /shinki-sidebar-tools/approvals`，客户端 2s 轮询。这两处宿主态重启即清空；
+落盘的只有浮层配置 `toast.json`，客户端另把面板状态 / 偏好 / 已展示 id 存进 localStorage
+（`dsh-shinki-tools:v1:会话键` / `dsh-shinki-tools.prefs.v1` / `dsh-shinki-toast:seen:v1`）。
+浮层**只提醒、不代替用户批准/拒绝**。
+
+**会话切换必须重挂载。** 视图的 `scope.sessionId` 在挂载那一刻求值，之后不会自动更新；
+对话切换后由 `bpRemountAll()` 重解析会话键并重建，官方右栏插槽则用 `key = 's:' + 会话键`
+强制 React 卸载重建，避免"A 的工作区数据留在 B 的视图里"。
+
+---
+
+## HTTP API（host 半边）
+
+路由以 `ctx.webServer.register({ kind: 'prefix' })` 注册；本插件未额外实现回环 / Host 栅栏，
+暴露面取决于宿主监听地址。
+
+| 方法 | 路径 | 说明 |
+|---|---|---|
+| GET | `/shinki-sidebar-temp/views?session=&since=` | 临时视图快照；`since` 等于当前 `version` 时只回 `{version, views:null}`；缺 `session` 回 400 |
+| GET | `/shinki-sidebar-temp/diag` | 诊断：`inject`、`services`、`tool`、`sessionsWithViews`、`version`；带 `?debug=1` 才附带 `lastReport` 与 `logs` |
+| POST | `/shinki-sidebar-temp/report?debug=1` | 客户端回传诊断；无 `debug=1` 直接 403（避免常开写入面） |
+| GET | `/shinki-sidebar-tools/approvals` | 授权提醒环形缓冲（新→旧） |
+| POST | `/shinki-sidebar-tools/approvals/test` | 造一条测试提醒，供设置页自检 |
+| GET | `/shinki-sidebar-tools/toast-config` | 读取浮层配置（非法值已钳到合法区间） |
+| POST | `/shinki-sidebar-tools/toast-config` | 写入并回显规范化后的 `{ enabled, maxVisible, dwellMs }` |
+
+`toast.json` 的默认值：`enabled=false`、`maxVisible=3`（1..10）、`dwellMs=8000`（3000..60000）。
+
+---
+
+## 目录结构
+
+```text
+dsh-shinki-sidebar-tools/
+├── package.json            # dsh.bundle.patch + dsh.client(platform: web)；无运行时依赖
+├── cordis.patch.yml        # 把插件行插进 profile roster
+├── lib/
+│   ├── index.js            # host 半边：注册两条前缀路由 + sidebar_temp_view 工具
+│   ├── client.js           # 浏览器半边：滚动 / ≡ 菜单 / 适配层 / 面板 / 迷你窗 / 浮层 / 设置页
+│   ├── temp-views-store.js # 临时视图内存 store（按会话归属、版本号、长度上限）
+│   ├── temp-views-tool.js  # sidebar_temp_view 工具定义与参数校验
+│   └── approvals.js        # approval/asked 环形缓冲 + toast.json 读写
+├── docs/                   # 适配状态快照、临时视图工具、底部面板参考、授权浮层调研
+└── tools/                  # 冒烟与契约自检、独立部署脚本
 ```
 
-即目标是 `~/.dsh/profiles/desktop`（`%USERPROFILE%\.dsh\profiles\desktop`）。机器上若还留着旧的可移植
-（EAC）实例，它用的是另外的 profile（如 `web-desktop`），装到那里对官方客户端完全无效。
+---
+
+## 安装与生效
+
+1. **部署**：把本目录放到 profile 可引用的位置（下文记作 `$PLUGIN_DIR`）。
+
+2. **登记进 profile**（示例 profile 名 `shinki-desktop`）：
+
+   ```sh
+   dsh plugin --profile shinki-desktop add "file:$PLUGIN_DIR"
+   ```
+
+   包名会被写进 profile 的 `dsh.profile.bundles`，插件自带的 `cordis.patch.yml`（`dsh.bundle.patch`）
+   作为 bundle 层生效。手工往 `cordis.patch.yml` 写 roster 行是**另一种**机制（设置页插件管理器用的），
+   只写 roster 不会被 Loader 挂载。本地迭代可用 `link:$PLUGIN_DIR`（pnpm 符号链接，改完刷新即生效）。
+
+3. **验证**：页面 boot 载荷里出现 `dsh-shinki-sidebar-tools/client.js`；右侧栏 tab 条出现细滚动条，
+   右下角出现 `≡`；`dsh plugin --profile shinki-desktop list --depth 0` 能列出本插件。
+
+4. **卸载**：`dsh plugin --profile shinki-desktop remove dsh-shinki-sidebar-tools`。
+
+> ⚠️ `file:` 是**快照**：改源码后必须重跑第 2 步，或改用 `link:`。host 半边（`lib/*.js`）改动
+> **必须重启** dsh web（bundle 成员与 host 代码都是启动边界）。
+
+### 官方 DSH 桌面端的 profile 名（实测）
+
+上面的示例用了自定义 profile 名。若目标是**官方 DSH 桌面端**，它启动的是固定名字 `desktop`
+（`@deepseek-ai/dsh-desktop-host/lib/index.js` 的 `main()` 里
+`runProfile({ profile: "desktop", args: ["--no-open", "--port", "19387"] })`），
+目录是 `%USERPROFILE%\.dsh\profiles\desktop`：
 
 ```powershell
 & 'E:\DeepSeek Harness\resources\runtime\cli\bin\dsh.cmd' plugin --profile desktop add `
   file:E:\path\to\dsh-shinki-sidebar-tools
 ```
 
-- **登记机制**：包名会被写进 profile 的 `package.json` → `dsh.profile.bundles`，插件自带的
-  `cordis.patch.yml`（`dsh.bundle.patch`）作为 bundle 层生效。手工往 `cordis.patch.yml` 写 `insert`
-  roster 行是**另一种**机制（设置页插件管理器用的），只写 roster 不会被 Loader 挂载。
-- **生效**：官方客户端**热挂载**，通常不需要重启；host 半边只注册只读路由与 `sidebar_temp_view` 工具
-  （`inject: ['webServer','tools']`），其余能力在浏览器半边随页面加载。
-- **依赖**：无。零注入设计 —— 失败不影响宿主。
-- **卸载**：`dsh plugin --profile desktop remove dsh-shinki-sidebar-tools`。
+**不要用 agent shell 里的 `DSH_HOME` / `DSH_PROFILE_DIR` 判断目标 profile**：机器上若还留着旧的
+可移植（EAC）实例，它指向的是另外的 profile（本机是 `web-desktop`），装到那里官方客户端完全看不到。
 
-### 通用安装
+两点与自定义 profile 不同的实测结论：
+
+- **生效是热挂载**：`dsh plugin add` 完成后新 bundle 即挂进运行中的会话，**通常不必重启**；没生效再重启客户端。
+- **验证**：设置 → 插件页（`pluginInventory`）能搜到 `dsh-shinki-sidebar-tools`；无会话时头部按钮不出现属正常。
+
+---
+
+## 环境要求
+
+- **Node 20+**（`package.json` 的 `engines`），宿主进程提供 `webServer` 与 `tools` 两个服务。
+- **无外部 CLI、无第三方运行时依赖**；`@deepseek-ai/dsh-tools` 可用时用其 `defineTool`，
+  不可用时回退为最小包装（`parameters` 补 `type: 'object'`），工具仍能注册。
+- 浏览器侧需要 `react`（`require('react')`，取不到时菜单等纯 DOM 能力仍可用）与
+  `@deepseek-ai/dsh-client-modules` / `@deepseek-ai/dsh-client-locale`（见 `dsh.client.inject`）。
+
+---
+
+## 开发
 
 ```sh
-dsh plugin --profile <profile> add link:/绝对路径/dsh-shinki-sidebar-tools   # 本地开发
+node tools/verify-temp-views.mjs        # 临时视图：三种 kind、参数三选一、会话隔离、版本短路
+node tools/verify-approvals.mjs         # 授权采集：重复派发去重、无 requestId 的稳定指纹、环形淘汰
+node tools/verify-toast-client.mjs      # 浮层行为：当前会话不弹、历史不弹、已展示 id 落 localStorage
+node tools/verify-props-contract.mjs    # props 契约 / 按会话状态 / 两轴滚动 / 层次 / 尺寸 / mini
+node tools/smoke-client.mjs lib/client.js   # 桩环境真实加载 bundle 并调用 apply（冒烟护栏）
 ```
 
-## 原理
+`node --test` 脚本仍在 `package.json` 里，但仓库当前没有 `tests/` 目录，实际上以 `tools/` 下的自检为准。
 
-| 能力 | 手段 |
-|---|---|
-| 滚动 | 注入 CSS 覆盖 `[class*="_stripTabs_"]`（用类名片段而非哈希全名，构建变更后依然命中） |
-| ≡ 菜单 | 右下角 `≡` 按钮（纯 DOM，不依赖 React）枚举 tab 条里的全部 tab，`scrollIntoView` 后模拟 click 激活；同一菜单含可创建视图 / 面板开关 / 迷你 / 弹窗分区 |
-| 视图清单 | 先取本插件注册表 `viewSpecs`，再枚举 `sidebarRightTabs`（`items/defs/types/registry`）；官方 kind 只在枚举计数时用，`BUILTIN_VIEWS` 仅作兜底 |
-| 临时视图 | 宿主内存 store + 只读路由 `/shinki-sidebar-temp/views`（客户端 1.5s 轮询对齐），`tmp-` 前缀、按会话归属 |
-| 授权浮层 | 宿主订阅 `session/event` 的 `approval/asked` 进环形缓冲 + `GET /shinki-sidebar-tools/approvals`（客户端 2s 轮询，默认关闭） |
-| 容错 | 零注入 + `ctx.get()`；任何失败只 `console.warn`，不影响宿主启动 |
+### 容易踩的坑
 
-## 配置
+- **改 `lib/client.js` 必须跑冒烟**：`node --check` 只查语法，查不出作用域 / TDZ / 时序错误
+  （历史上出现过 `tabOptions is not defined`、新模式块被塞进 `setTimeout`，直接导致 profile 起不来）。
+- **服务必须 `provide`**：`ctx.shinkiViews = …` 会抛 `cannot set property … without provide`；
+  且失败要 `try/catch` 打出来，否则会被静默吞掉。
+- **`≡` 菜单可滚动**（`maxHeight = vh-16` + `overflowY:auto`）：新增分区要放**最前**，否则被挤出可视区。
+- **QtWebEngine 的 `window.open` 不可靠**：会被当成本页导航 ⇒ 弹窗形态默认面板内全屏承载，真窗口只作可选项。
+- **工具三契约**：`output.render` 必填（缺了注册直接失败）；`output.schema` 必须是标准 JSON Schema
+  （带 `type/properties`）；`render` 签名是 `(args, value)`，只写一个参数会回显入参。
+- **容器必须 `overflow: 'hidden'`**：否则子视图的 `height:100%` 被内容撑破，"表格变长后整个视图跟着滚"。
+- **强制 CSS 的副作用**：宿主对 `[data-shinki-view-body] > *` 注入 `height:auto !important; overflow:visible !important`
+  让面板整体滚动；视图想自己滚就给根节点加 `data-shinki-view-selfscroll="1"` opt-out。
+- **不要给 `sidebarRightTabs.register` 传 `guide`**：两次实测一旦带上 `guide` 字段，「+」打开的指南界面变空白。
+- **pnpm 硬链接会误导排查**：源码 / 安装源 / 运行时可能是同一份文件；需要独立副本时跑
+  `python tools/deploy-independent.py --apply`（干跑不加 `--apply`，只报告现状与三处 md5）。
 
-内置视图清单 `BUILTIN_VIEWS`（`lib/client.js`）现在是**空数组**：可创建视图按 `registerView` 的注册信息
-**动态增删**，不再硬编码（避免列出未注册/不存在的视图）。
+### 版本号
 
-授权浮层配置在 `<DSH_HOME>/plugin-data/dsh-shinki-sidebar-tools/toast.json`：`enabled`（默认 `false`）、
-`maxVisible`（1..10，默认 3）、`dwellMs`（3000..60000，默认 8000）；设置页「侧栏工具」写的就是它。
+当前 **v0.2.6**（`package.json` 的 `version` 与 tag `v0.2.6` 一致）；分支沿用 git-graph 的策略：
+`main` / `dsh0.2.0` / `dsh0.2.1`，当前开发分支是 `dsh0.2.1`。
 
-## 路线图：接替 dsh-better-sidebar 的部分能力
+策略：只在发布时 bump 版本并打 tag，纯文档 / 注释提交不动版本；`lib/client.js` 里**不重复硬编码**
+版本号，`package.json` 是唯一来源。打包发布沿用 `files` 白名单（`lib`、`cordis.patch.yml`、`README.md`）。
 
-### 背景与动机
+---
 
-`dsh-better-sidebar` 是**第三方插件**（当前 `0.24.1`）。实际使用中发现两类问题：
+## 许可
 
-1. **版本兼容风险**：它提供的 `betterSidebar` 服务是若干插件（本插件、`dsh-shinki-music`、
-   `dsh-shinki-git-graph`、`dsh-shinki-serial-monitor` 等）激活时的依赖项；第三方版本变动会导致
-   这些插件 `pending (waiting for service: betterSidebar)` 而**整块视图不可用**。
-2. **能力缺口**：官方右侧边栏存在"**视图被挤掉、横向无法滚动、看不到目标视图**"的可达性问题
-   —— 本插件的横向滚动支持与 `≡ 全部视图` 菜单，正是为补这个缺口而做，而这部分能力
-   **不应由一个第三方插件来决定有无**。
+Apache-2.0
 
-### 目标
+---
 
-让本插件成为**可自足**的替代路径：在**禁用 `dsh-better-sidebar`** 的情况下，
-与之相关的视图仍能通过**本插件 + 官方 `sidebarRight`** 打开并正常使用。
+## 相关路线图（依赖提示）
 
-### 计划（渐进、每步可回退）
-
-| 步 | 内容 | 判定 |
-|---|---|---|
-| 1 | 固化本插件能力：横向滚动、`≡` 全部视图（已打开 / 可创建）、菜单边界自适应 | 不依赖任何第三方即可工作 |
-| 2 | 为"下方面板/视图入口"提供**自实现**的等效形态（不再只靠 `betterSidebar.registerTab`） | 音乐播放器可从本插件入口打开 |
-| 3 | 打开视图的路径改为：**官方 `sidebarRight.openTab` 优先** → `betterSidebar` 仅作最后兜底 | 官方路径可用时不触碰第三方 |
-| 4 | 在 profile 中把 `dsh-better-sidebar` 标为**可选**，禁用后回归上述判定 | 禁用后各插件视图仍可用 |
-| 5 | 逐个评估依赖它的插件（music / git-graph / serial-monitor / svn-graph），切换或保留 | 无 `pending`、无功能缺失 |
-
-> **进度（2026-10-06）**：第 1–5 步均已完成 —— 能力自足（横向滚动 / ≡ 全部视图 / 菜单边界自适应）、
-> `bottom` 自实现、打开路径官方优先、6 个插件全部切到一句声明且无功能缺失。
-> 当时 `dsh-better-sidebar 0.24.1` 仍在运行（旧手工行的 disable 无效）⇒ 上述回归是在「**它同时存在**」的条件下取得的；
-> 该插件已于 2026-10-08 停用（见 [`docs/adaptation-status.md`](docs/adaptation-status.md) §0.2）。
-
-### 现状（已具备的基础）
-
-- 打开视图：`sidebarRight.openTab` 优先，`betterSidebar` 的方法名探测**仅作兜底**（集中在 `openView` 的最后一段兜底分支）
-- 视图发现：**动态**读官方注册表 `sidebarRightTabs.entries()`，硬编码清单只在枚举失败时兜底
-- 与 `dsh-shinki-music` **无强依赖**（双向审计通过）：音乐插件自带四个入口，本插件也可独立工作
-
-## 三种视图形态的支持方案（对接官方 API / 参考 better-sidebar）
-
-目标：本插件除"右侧边栏可达性增强"外，进一步提供**三种扩展视图形态**，并逐步摆脱对第三方
-`dsh-better-sidebar` 的依赖。以下为**依据实测源码得出的接入口**（非猜测）。
-
-> **2026-10-06 现状（本节已被实现超越，以 [`docs/adaptation-status.md`](docs/adaptation-status.md) §1 为准）**：
-> 三种形态**均已落地**，且实现方式与当时的"待确认"不同 ——
-> 形态 A → **自绘底部面板**（官方并无下方面板槽位；浮层降级方案被弃用后改为自绘实体面板）；
-> 形态 B → 走官方 **`conversation.view`** 槽位（不是 `registerTrajectoryConversationView`）；
-> 形态 C → 默认**面板内全屏承载**（真 `window.open` 在本宿主 QtWebEngine 下会被当成本页导航）。
-> 本节保留当时的侦察结论作为背景。
-
-### 形态 A：下方扩展视图（bottom panel tabs）
-
-| 项 | 内容 |
-|---|---|
-| better-sidebar 现状 | `ctx.betterSidebar.registerTab({ id, title, order, single, createTab, component })`；**注册 id 必须等于 `createTab().tab.type`**（本项目踩过：不等会报"插件未加载，标签页暂不可用"） |
-| 自实现要点 | 下方容器属于 third-party 自绘 ⇒ 自实现需**自己渲染底部面板**并挂到官方槽位；待确认项：`@deepseek-ai/dsh-client-ui-layout` 是否暴露下方面板槽位（下一步先读它的 `lib/client.js` 槽位清单） |
-| 兼容策略 | 先提供 `registerBottomTab` 等价 API，内部**优先官方槽位**，无槽位时降级为自绘浮层 |
-
-### 形态 B：主视图模式（与「对话 / 轨迹」同级）
-
-| 项 | 内容 |
-|---|---|
-| 官方接入口 | **`@deepseek-ai/dsh-client-ui-trajectory`** 暴露 **`registerTrajectoryConversationView(...)`**（该包 `lib/client.js` 内可见 2 处调用样例），并配合 **`ctx.slots.register/inject`** 注入视图内容 |
-| 参考 | better-sidebar 的 `dsh.client.inject` 含 `@deepseek-ai/dsh-client-ui-conversation`，即"主视图模式"这一层由官方 conversation/trajectory 包掌管 |
-| 自实现要点 | 用 `registerTrajectoryConversationView` 注册一个 mode 视图 + 用 `slots` 注入 React 组件；**需先读该包签名**（参数形状：id/title/render/order 待确认） |
-| 风险 | 该 API 属官方内部扩展点，跨版本可能变动 ⇒ **必须做能力探测**（`typeof fn === 'function'`）并在缺失时只 `console.warn`，绝不阻塞宿主 |
-
-### 形态 C：独立弹窗视图（detached window）
-
-| 项 | 内容 |
-|---|---|
-| better-sidebar 做法（已验证） | **自建 host 路由**提供独立 HTML 页面：客户端可见 `/sidebar/html`、`/client/html`、`/bundle`；随后 `window.open(url, '_blank', 'noopener,noreferrer')` 打开 |
-| 本插件落地 | 本插件已有 host 半边（`lib/index.js`）⇒ 增加 `GET /shinki-tools/html?...` 返回**自包含 HTML**（内联需渲染的 JS/CSS），客户端 `window.open` 打开；需要跨窗口同步时用 `BroadcastChannel` 或轮询 |
-| 安全 | 复用回环信任栅栏（socket + Host 双校验）+ 仅允许白名单视图 kind，禁止任意 HTML/路径注入 |
-
-### 落地顺序（与上文路线图对齐）
-
-1. **形态 C（弹窗）** —— 最独立、与第三方零耦合，先做可最快验证 host 路由 + `window.open` 通路；
-2. **形态 B（主视图模式）** —— 接官方 `registerTrajectoryConversationView`，做成"有就用、无则降级"；
-3. **形态 A（下方视图）** —— 先确认官方槽位；若官方无槽位，则自绘面板 + 复用本插件浮动层能力。
-
-> 每一步都遵守本插件既有约定：**能力探测 + 优雅降级 + 只 `console.warn` 不影响宿主启动**。
-
-## 适配层契约：一句声明，落入多种视图形态
-
-### 定位
-
-本插件同时承担**多形态视图适配层（middleware）**：消费方插件**只声明一次**，由本插件负责把它
-落到**下方视图 / 主视图模式 / 独立弹窗**等形态。**消费方不直接调用官方或第三方 API。**
-
-### 为什么要这层
-
-| 问题 | 由本层吸收 |
-|---|---|
-| DSH 破坏性更新 / 新特性（槽位改名、API 换签名、新增形态）| 只改**本插件一处**，已接入的插件**零改动** |
-| 上游 `dsh-better-sidebar` 跟不上官方，或自身引入破坏性改动 | 本插件**优先官方实现**：右栏/底部/主视图/弹窗**都不再经过第三方**（`registerTab` 过渡桥已移除），仅「打开视图」的最后兜底分支保留第三方方法名探测；它已在本 profile 停用（2026-10-08），停用前后本插件四种形态均照常工作 |
-| 每个插件各自对接多个视图形态，重复且易踩坑 | 统一契约 + 统一降级策略，接入成本降到一句声明 |
-| 官方扩展点尚未稳定 | 能力探测 + 降级链，**缺失只是少一个形态，不阻塞插件激活** |
-
-### 消费方 API（一句声明）
-
-```js
-// 消费方插件里只需这一句；与具体形态、官方 API、第三方插件均解耦
-const handle = ctx.shinkiViews.register({
-  id: 'my-plugin-view',            // 全局唯一；同名以先注册者为准
-  title: '我的视图',                // 展示名（可传 i18n 文案）
-  icon: MyIcon,                    // 可选
-  order: 50,                       // 可选，形态内排序
-  render: (props) => el,           // 渲染函数：接收稳定 props，返回 React 元素/节点
-  targets: ['bottom', 'mainView', 'popup'],   // 想落到哪些形态；不支持者自动跳过
-  mini: {                          // ★ v3：迷你 / 悬停窗口 —— **单独的迷你视图实现**（不复用 render）
-    render: (props) => el,         //   独立实现；props 见下表（含 tier/width/height，据此换布局）
-    defaultVisible: false,         //   可选，**缺省 false = 启动不显示**；显式 true 才在启动时以 240×80 显示在右下角
-                                   //   （例：dsh-shinki-music 显式声明 true，才会开机就出现播放器迷你条）
-  },
-});
-// 卸载时：handle.dispose()
-```
-
-**稳定 props 契约**（保证同一 `render` 可被任何形态承载）：
-
-| 字段 | 含义 |
-|---|---|
-| `container` | 承载容器（形态决定尺寸/位置）|
-| `form` | 当前形态：`'bottom' \| 'mainView' \| 'popup'` |
-| `close()` | 请求关闭/收起当前形态：底部栏=收起面板（视图保持挂载）；弹窗=关窗；官方槽位（右栏/主视图）的开关由宿主掌管，本层只告警 |
-| `setTitle(t)` | 动态改标题：底部栏 TAB 条 / ≡ 菜单即时生效；官方右栏已打开的 tab 标题由宿主在 openTab 时捕获，需重开该 tab |
-| `isDetached` | 是否运行在独立窗口（弹窗形态为 true，跨窗口通信走 `BroadcastChannel`）|
-| `tier` / `compact` | **仅 mini**：当前规格档 `'s' \| 'm' \| 'l'`（最大 240×240 / 400×400 / 500×500）与是否紧凑条（默认 240×80）|
-| `width` / `height` | **仅 mini**：当前盒子尺寸（px）——**布局必须按它自适应**（同一实现要能承载紧凑条与三档）|
-| `maxWidth` / `maxHeight` | **仅 mini**：该档最大尺寸 |
-| `setTier(t)` / `setCompact(b)` / `setOpacity(o)` | **仅 mini**：让消费方自己也能改规格/紧凑/透明度（等同控制条上的按钮/滑块）|
-
-**字段覆盖矩阵**（上面五个字段在**任何**形态都拿得到；官方槽位缺的那几个由适配层补齐）：
-
-| 承载 | container | form | close() | setTitle() | isDetached | 官方 kit |
-|---|---|---|---|---|---|---|
-| 底部栏（自绘面板）| 面板内容容器 DOM | `'bottom'` | ✅ 收起面板 | ✅ | `false` | — |
-| 右栏 tab（sidebar.right.pane.tab）| 真实 DOM 节点（portal 目标，首帧可用）| `'bottom'` | ⚠️ 宿主掌管 | ✅（同上）| `false` | `sessionId`、`useTabInfo` 等原样透传 |
-| 主视图（conversation.view）| 同上 | `'mainView'` | ⚠️ 宿主掌管 | ✅ | `false` | `inspectCall`/`openView`/`viewRequest`/`completeViewRequest` + kit |
-| 弹窗 / 面板内全屏 | 承载 host DOM | `'popup'` | ✅ 关窗 | ✅ | `true` | — |
-| 迷你 / 悬停窗口（v3）| 承载 body DOM（独立 React root）| `'mini'` | ✅ 关闭迷你窗 | ✅ | `false` | — + `tier/width/height/maxWidth/maxHeight/setTier/setCompact/setOpacity` |
-
-> **better-sidebar 口径的 props 也已由本层合成注入**：`visible`（恒 true，消费方靠它开轮询）、
-> `scope`（`{sessionId, cwd}`）、`tab`（`{id,type,title,meta}`）、`store`（`get/set/getPrefs/setPrefs/update/updateTab/subscribe/getSnapshot`）。
-> 7 个消费方都是从 better-sidebar 迁来的（最后一个 `dsh-can-tool` 于 2026-10-08 迁完），实际读的就是这套（例：`store.updateTab(tab.id,{meta})` 存每视图设置）。
-> 其中 `tab.meta` 与 `store.get/set` 落在**按会话状态**里，`store.getPrefs/setPrefs` 为全局；
-> 右栏/主视图路径上官方 slot 的 kit（`useStore`/`sessionId`/`useTabInfo`）仍原样透传。
-
-### 适配层内部：形态 → 实现（按优先级探测）
-
-| 形态 | 实现优先级 |
-|---|---|
-| `bottom` | **本插件自绘面板**（挂 `<body>`、`position:fixed`、`z-index:100`；拖拽握把 + TAB 条 + `＋` 下拉 + ✕）；让位 = 会话列 `margin-bottom`；滚动由 CSS `overflow:auto` 按内容高度决定。**已移除** better-sidebar `registerTab` 过渡桥 |
-| 官方右栏 = 形态 **`right`**（2026-10-09 起；与 `bottom` 共用注册、同 id 去重；承载视图沿用 `form:'bottom'`）| `sidebarRightTabs.register` + `slots('sidebar.right.pane.tab')`；承载层 `slotHostView` 提供 portal `container`、`close/setTitle/isDetached` 与渲染错误边界 |
-| `mainView` | 官方 `conversation.view` 槽位：`slots.inject('conversation.view', () => slots.register({name,id,order,label,inject}, Body))`（与「对话/轨迹」同级） |
-| `popup` | 默认**面板内全屏承载**（自绘标题栏 + ✕ + Esc + 滚轮兜底）；真独立窗口 `window.open` 在本宿主不可靠，仅保留 `openPopupWindow()` |
-| `mini`（v3）| **悬停 / 迷你窗口**：`<body>` 下 `position:fixed`（`z-index:9000`，低于菜单/FAB）、独立 React root；三档规格 **最大 240×240 / 400×400 / 500×500**，**默认 240×80 紧凑条锚右下角**（避开本插件 FAB；**是否启动即显示**由 `mini.defaultVisible` 决定，**缺省不显示**，从 ≡ 菜单 / ＋ 下拉打开）；hover 才显控制条、可拖动、可调透明度、✕ 关闭；**显示配置（位置/规格/透明度/可见性）与主窗口完全独立**，按「会话 + 视图」存在 `values.mini.byView`；**数据必须与主视图共享**（同一个 `store`，消费方不得复刻第二份状态）。**参考实现**：`dsh-shinki-music` 的 `MiniBody`（播放控制 + 曲目名跑马灯；播放数据上提为模块级 `PLAYER` store，全插件唯一 `<audio>`，主视图与迷你视图共用）|
-
-**降级原则**：任一形态不可用 ⇒ 只 `console.warn` 并跳过该形态，**其余形态照常**，绝不抛错、绝不让宿主/消费方 `pending`。
-
-### 兼容与版本
-
-- 契约带版本：`CONTRACT_VERSION = 3`（v2 增加 `background` 后台策略、v3 增加 `mini` 悬停/迷你窗口；都缺省兼容旧行为）；适配层承诺同时支持 **N 与 N-1**，升级期不破坏存量插件。
-- 能力探测而非版本号判断：一律 `typeof fn === 'function'` 实测，避免"看着有其实没有"。
-- 所有注册句柄可 `dispose()`；插件卸载/热重载后可干净重注册。
-
-### 迁移路线（与上文路线图一致）
-
-1. 适配层上线 `register()`，`bottom` 先走 **betterSidebar 过渡桥**（存量行为不变）；
-2. 实现 `popup`（零外部依赖，可独立验证 host 路由 + `window.open`）；
-3. 接官方 `mainView`；
-4. `bottom` 自实现，**禁用 `better-sidebar` 后回归验证**；
-5. 消费方逐个切换为"一句声明"（首个：`dsh-shinki-music`），完成后再评估是否彻底移除过渡桥。
-
-> **进度（2026-10-06）**：5 步全部执行完毕 —— `bottom` 已自绘实现且**过渡桥已移除**；`popup`/`mainView` 已落地；
-> 7 个消费方（9 个视图，含最后完成迁移的 `dsh-can-tool`）全部切到一句声明；回归先在 `dsh-better-sidebar` 同时运行时通过，随后它被停用。
-
-## 实现进度（适配层）
-
-**现状快照见 [`docs/adaptation-status.md`](docs/adaptation-status.md)** —— 形态 × 实现 × 入口 × 状态、
-7 个消费方 / 9 个视图的适配矩阵、props 契约、按会话状态、关键不变量、待办，都在那一份里。
-
-一句话：四种承载（**底部自绘面板 / 官方右栏 seat / `conversation.view` / 弹窗·面板内全屏**）均已落地并实测通过；
-7 个消费方（music、git-graph、serial-monitor、svn-graph、js-ble-tool、ble-tool、can-tool）全部走「一句声明」。
-
-> ⚠️ **`dsh-better-sidebar 0.24.1` 已于 2026-10-08 按用户要求停用挂载**（`dsh.profile.bundles` 摘除 +
-> `cordis.patch.yml` 按**正确 id** `better-sidebar` 的禁用行 —— 旧写法 `web-ui-better-sidebar` 是历史手工挂载行、id 不同 ⇒ 禁不掉它）。
-> 停用前它与本插件并存「两套底部栏」（本插件 `#shinki-tools-panel` vs 它的 `[data-dsh-bottom-panel]`）；
-> 因它原先的硬依赖方 `dsh-can-tool` 已迁移到本适配层，停用后无插件 pending。依据/做法/回退见
-> [`docs/adaptation-status.md`](docs/adaptation-status.md) §0.2。
-
-### 经验记录（避免重复踩坑）
-
-1. **服务必须 `provide`**：`ctx.shinkiViews = …` 会抛 `cannot set property "…" without provide`；且**必须用 try/catch 暴露出来**，否则会被静默吞掉。
-2. **`≡` 菜单与右键菜单是两套代码**（`openAllViews` / `showMenu`）⇒ 共用逻辑要抽函数，改一处不够。
-3. **菜单可滚动**（`maxHeight = vh-16` + `overflowY:auto`）⇒ 新增分区要放**最前**，否则会被挤出可视区。
-4. **QtWebEngine 的 `window.open` 不可靠**：会把调用当成本页导航 ⇒ 弹窗类形态应以**面板内承载**为默认，真窗口作为可选项。
-
-## mainView 接入点（已读源码确认）
-
-来源：`@deepseek-ai/dsh-client-ui-trajectory/lib/client.js`（官方包，只读侦察）。
-
-### 真实扩展点
-
-```js
-// 官方内部函数本身就这一句：
-function registerTrajectoryConversationView(ctx) {
-  ctx.uiConversation.views.register(trajectoryViewDefinition);
-}
-```
-⇒ **主视图（与「对话 / 轨迹」同级）的注册入口是 `ctx.uiConversation.views.register(definition)`**，
-而非某个专用 API；`uiConversation` 由官方包 `@deepseek-ai/dsh-client-ui-conversation` 掌管
-（trajectory 包的 `dsh.client.inject` 里正是它）。
-
-### 官方轨迹视图自身的注册写法（可照抄的范式）
-
-```js
-ctx.uiSession.provide({ hooks: ["trajectory"], resolve: … });
-
-ctx.slots.inject("conversation.view", () => ctx.slots.register({
-  name: "conversation.view",
-  id: "trajectory",
-  order: 10,
-  locale: NS,
-  label: () => t("view.trajectory"),      // ← 同级 tab 的标题
-  children: { "conversation.trajectory.…": … },   // ← 该视图的内部槽位
-}));
-```
-
-### 适配层的实现计划（含已知风险）
-
-1. `waitFor(ctx, ['uiConversation', 'slots'], …)` —— **用运行时探测取服务，不写进 `dsh.client.inject`**
-   （教训：把无法从 profile 解析的包写进 inject 会导致**整个 client graph 起不来**）；
-2. `svc(ctx,'uiConversation').views.register({ id: spec.id, order: spec.order, label: () => spec.title })`；
-3. `slots.inject('conversation.view', () => slots.register({ name: 'conversation.view', id: spec.id, order, label, children: {…} }))`；
-4. 全部包在 `typeof … === 'function'` 能力探测里，缺失只 `console.warn` 并跳过该形态。
-
-**待确认（实现前必须先读）**：`views.register(definition)` 的完整字段形状（`trajectoryViewDefinition` 的定义体）
-与视图 body 对应的 `children` 槽位映射 —— 否则会出现"tab 出现了但内容是空的"。
-
-## 契约 v2：后台生命周期（供任意插件复用）
-
-原则：**插件只声明"想要什么行为"，暂停/继续/停止的派发由本中间件实现**。
-
-### 声明式（随视图注册，自动登记）
-
-```js
-ctx.shinkiViews.register({
-  id, title, render, targets,
-  background: 'force',                 // 'pause'(默认) | 'remember' | 'stop' | 'force' | true | false
-  onSuspend: ({ policy }) => { … },    // 视图卸载：pause / remember 时调用
-  onResume:  ({ policy }) => { … },    // 视图重新挂载
-  onStop:    ({ policy }) => { … },    // policy === 'stop' 时调用（缺省回退 onSuspend）
-});
-```
-
-### 命令式（适合后台任务这类非视图资源）
-
-```js
-const h = ctx.shinkiViews.lifecycle.register('my-task', { onSuspend, onResume, onStop });
-ctx.shinkiViews.lifecycle.dispatch('my-task', 'suspend', 'pause');
-ctx.shinkiViews.lifecycle.policies();   // ['pause','remember','stop','force']
-ctx.shinkiViews.lifecycle.keys();
-h.dispose();
-```
-
-### 派发语义
-
-| 策略 | 卸载 | 重新挂载 |
-|---|---|---|
-| `force` / `true` | **不动作**（继续后台运行）| `onResume` |
-| `pause`（默认）/ `remember` | `onSuspend(policy)` | `onResume` |
-| `stop` | `onStop(policy)`（无则回退 `onSuspend`）| `onResume` |
-
-### 实现方式
-
-`wrapView(spec, form)` 在**三种形态**（bottom / mainView / popup）中统一包装消费方 `render`：
-挂载时派发 `onResume`、卸载时按策略派发 `onSuspend`/`onStop`，并注入 `props.background`
-⇒ 插件无需手写生命周期。已用于 `dsh-shinki-music`（`background:'force'`，切视图不断播）。
-
-## 待办（现状与做法见 [`docs/adaptation-status.md`](docs/adaptation-status.md) §6）
-
-| # | 事项 | 状态 |
-|---|---|---|
-| 1 | 隐藏自检视图 `dsh-shinki-tools:sandbox` | ✅ 已**整块移除**（不再出现在任何菜单/可创建清单里） |
-| 2 | `serial-monitor` 的 4 处 `ctx.betterSidebar.*` | ⏳ 仍在：better-sidebar 已禁用 ⇒ 属性访问被 cordis 拒、功能静默降级（不崩）；建议改 `ctx.get('betterSidebar')` 或删老模式分支 |
-| 3 | `bottom` 自实现 | ✅ 已完成（自绘面板；让位/滚动/层次/按会话状态均实测通过） |
-| 4 | 其余插件接入 | ✅ 已完成（`js-ble-tool` / `ble-tool` 也已在"新模式"注册，连同 `can-tool` 共 7 插件 9 视图） |
-| 5 | `force` 短路的可观测性 | ✅ 已解决（派发留痕） |
-| 6 | ~~`targets:['right']` 无效 + 「未知形态已跳过：right」噪音~~ | ✅ 已修（2026-10-09）：`right` 成为正式形态（与 `bottom` 共用注册 + 同 id 去重，注销后允许重注册） |
-
-### 迁移新插件时的固定顺序（血泪教训，勿搬移）
-
-```
-① tabOptions（纯数据，最先构造）
-② let viaAdapter = false（声明必须先于任何引用）
-③ waitService(ctx, 'shinkiViews', …)  ← 新模式；不得放进定时器
-④ waitService(ctx, 'betterSidebar', sb => setTimeout(() => { if (viaAdapter) return; sb.registerTab(tabOptions); }, 1500))
-```
-> `node --check` **查不出**作用域/时序错误（实践中有三轮教训：`tabOptions is not defined`、`viaAdapter` TDZ、
-> 新模式块被塞进 `setTimeout`）。因此：**整体重写 `apply`**、改完做**位置序核对**，不要外科式搬移代码块。
-> 另：`bottom` 形态必须 `waitFor(betterSidebar)`（否则早注册的消费方 Tab 会消失 —— 实测 svn-graph）。
-
-## 改插件客户端代码的强制流程（护栏）
-
-`node --check` **只能查语法**，查不出作用域/时序/TDZ/未定义变量等**运行时**错误 —— 本项目因此出现过
-`tabOptions is not defined`、`viaAdapter` TDZ、新模式块被塞进 `setTimeout`、
-以及"自动抽取 options 导致 `createTab` 函数头被截断 ⇒ 插件 failed"等故障，
-其中一次直接造成 `web boot: 1 entry did not activate` ⇒ **profile 起不来**。
-
-**因此：任何插件 `lib/client.js` 的改动，落盘（同步到运行时）前必须跑冒烟测试。**
-
-```bash
-# 语法（必要但不充分）
-node --check <pkg>/lib/client.js
-
-# 冒烟（必要）：桩环境真实加载 bundle 并调用 apply，捕获运行时错误
-node tools/smoke-client.mjs <pkg>/lib/client.js [更多 client.js ...]
-#  ✅ 输出 "加载 + apply 成功" ⇒ 允许同步
-#  ❌ 输出 "❌ <pkg>: <错误>"    ⇒ 禁止同步，先修
-```
-
-冒烟测试 `tools/smoke-client.mjs` 会：桩化 `window.__ModuleLoader__` / `document` / `react` / `localStorage` /
-`Audio` / `MutationObserver` 等，加载 bundle（`factory(require)`）并调用 `apply(桩 ctx)`，
-同时捕获 `effect` 回调抛错 ⇒ 覆盖"能加载"与"能激活"两件事。
-
-契约/行为回归测试 `tools/verify-props-contract.mjs`（断言数随实现增长，脚本只报「全部通过 / 失败 N 项」：
-props 契约、按会话状态、两轴滚动兜底、拖拽热区、层次、纯 CSS 尺寸契约、渲染错误边界、mini 形态）：
-
-```bash
-node tools/verify-props-contract.mjs [<pkg>/lib/client.js]
-```
-
-### 部署：不要依赖 pnpm 的链接布局
-
-pnpm 会把源码**硬链接**进 `.pnpm` store，并让 `node_modules/<pkg>` 指向它 ⇒ 源码 / 安装源 / 运行时
-实际是**同一份文件**，排查时极易误判"改的到底是哪一份"。要三处各自独立（inode 不同、nlink=1）：
-
-```bash
-python3 tools/deploy-independent.py            # 干跑：报告现状 + 三处 md5
-python3 tools/deploy-independent.py --apply    # 从源码整树复制（含把运行时符号链接换成真实目录）
-```
-
-注意：再次 `pnpm install` 后 pnpm 会重建自己的链接布局；需要独立副本时重跑本脚本。
-
-### 另外两条硬性约定（血泪）
-
-1. **不要用脚本自动抽取/搬移代码块**（尤其 options 对象）—— 抽取边界极易偏移而产生"语法合法但语义错"的代码；
-   要改就**整体重写 `apply`**、options **逐字段手写**。
-2. **顺序固定不可搬移**：`① options（纯数据）→ ② let viaAdapter → ③ waitService('shinkiViews')（立即）
-   → ④ waitService('betterSidebar') + setTimeout 回落`；改完做**位置序核对**（新模式块不得落在定时器内）。
-
-## `bottom` 自实现的关键线索（已侦察，勿丢）
-
-> **更正（重要）**：`@deepseek-ai/dsh-client-ui-dockkit` 经复核是**类型词汇表包**（目录为空、仅被
-> `import type` 引用）—— 它**不是**运行时服务，不能用来挂面板。真正实现停靠的是
-> **`@deepseek-ai/dsh-client-ui-sidebar-right`**（内部有 `dock`/`docked`/`dockPaneIds`/
-> `activeDockPaneId`/`dockFloat` 实现，对外暴露 `openTab`/`openTabIn`/`openWithPaneFocus`/`dockFloat`）。
-> 因此 `bottom` 自实现的目标是 **`ctx.sidebarRight` 的 pane/dock API**。
-
-目标是让 `targets: ['bottom']` **不再经过 better-sidebar 过渡桥**，从而彻底移除第三方依赖。
-
-### 官方正主：`@deepseek-ai/dsh-client-ui-dockkit`
-
-侦察方式：类型声明 `.../dsh-client-ui-sidebar-right/lib/types/**/*.d.ts`。
-
-| 证据 | 内容 |
-|---|---|
-| 独立包 | **`@deepseek-ai/dsh-client-ui-dockkit`**（注释自称 *The docking kit*）|
-| 它导出的类型 | `PaneId` · `TabId` · `TabRecord` · `DockLabels` · `LayoutState` |
-| 语义 | `focus.d.ts`: `readonly host: 'dock' \| 'float'`（**停靠** 与 **浮动** 两类宿主）|
-| `sidebar-right` 的用法 | `client/labels.d.ts` 里 `dockLabels(t, split?, close?) → DockLabels`；`contract/slots.d.ts` 注明"每个 kind 的全部 tab，**无论 docked 还是 floating**" |
-| `sidebar-right` 服务方法（可复用）| `openTab` · `openTabIn` · `openWithPaneFocus` · **`dockFloat`** · `dockPaneIds` · `activeDockPaneId` · `registerSidebarShortcuts` · `openRightbar` |
-
-### 下一步（实现顺序）
-
-1. 读 `dsh-client-ui-dockkit` 的 `.d.ts`，确认**注册一个 pane/tab 并指定停靠到底部**所需的最小调用；
-2. 读 `dsh-client-ui-sidebar-right` 的 `contract/slots.d.ts`，找**底部 pane 的槽位名**（或 `dockPaneIds` 的语义）；
-3. 用上述官方 API 替换中间件 `bottom` 形态里的 `waitFor(['betterSidebar']) + sb.registerTab(...)`；
-4. 回归：三种形态照常 + **禁用 better-sidebar 后 Tab 仍落底部** ⇒ 之后即可从 profile 移除该第三方包（并查清此前"从 bundles 移除导致 profile 起不来"的原因）。
-
-### 已验证的坑：不要给 `sidebarRightTabs.register` 传 `guide`
-
-**两次实测**：一旦在注册里加 `guide: [{id, order, title, description}]`，「+」打开的**指南界面就变空白**
-（撤掉即恢复）。因此：
-- 中间件注册视图时**不传 `guide`**；
-- "类型已注册但未打开"的视图，进入路径走**我们自己的 `≡ → 可创建`**（动态清单，已可用）；
-- 若要重新支持 `+` 指南，须**先读官方 `SidebarRightGuideEntry` 的精确类型/实现**再动手，不可照搬字段名。
-
-## 下方视图的探索结论与 C1 决策（重要，勿重复踩坑）
-
-需求："串口/蓝牙等工具以**下方**为主要视图"（右侧栏太窄不便观测）。
-
-### 已评估的官方途径
-
-| 途径 | 结论 |
-|---|---|
-| `dock.drop.bottom`（官方侧边栏）| 语义是 **"下分栏"** —— 把**右侧栏内部**拆成上下两格，**仍是右侧栏** ⇒ 解决不了"太窄"的问题 ❌ |
-| `conversation.composer.dock`（"Ambient entries below the composer card"，`list`/`session`）| 渲染方式是 `renderSlot('conversation.composer.dock', {})` ⇒ **不给任何 props**，期待"空 props 也能自渲染"的**小条目**（如官方 `TodoDock`/`QueueDock`）。把**整面板组件**（串口监控等，按 better-sidebar 的 `ctx/store/scope/tab/visible` 写的）直接塞入 ⇒ 抛错 ⇒ **整个会话区渲染崩溃**（实测）❌ |
-| `conversation.input.dock` | 官方 `TodoPanel`/`QueueDock` 的实际落点；同样是"小条目"语义 ⚠️ |
-
-### C1 决策（用户选定）
-
-**不碰官方槽位**：工具视图继续通过 **官方右侧栏**（`sidebarRightTabs` + `slots('sidebar.right.pane.tab')`）与 **`≡ → 可创建`** 进入。
-- ✅ 已验证可用、零第三方、会话区不受影响；
-- 自绘"应用底部大面板"方案**已废弃并删除代码**（浮层+预留空间的近似方案观感与官方/better-sidebar 差异大，用户判定不可用）。
-
-> **2026-10-06 更新**：上面这条**结论已被推翻** —— 按用户要求重新实现了自绘底部面板，它现在就是 `bottom` 的正式形态
-> （挂 `<body>`、`z-index:100`、拖拽握把、按会话隔离状态、让位走会话列 `margin-bottom`、滚动完全交由 CSS）。
-> 记在这里只为保留决策轨迹；当前实现与不变量见 [`docs/adaptation-status.md`](docs/adaptation-status.md) §1 / §5。
-
-### 若将来仍要"底部"
-
-只能走 **适配器包装 + React 错误边界 + 一次只加一个视图** 的谨慎路径（单个视图崩溃不得牵连会话区），且必须先读该槽位官方消费者的实现。
-
-## 排查记录：切换工作区后视图内容不跟随（2026-10-20）
-
-**现象**：在 A、B、C 三个工作区之间循环切换时，右侧 / 底部视图内容不切换或滞后一拍
-（A→B 不变，B→C 显示 B，C→A 显示 C）；刷新页面或关闭重开面板才恢复。SVN 及其它
-依赖工作区的视图同样受影响。
-
-**根因**（三处叠加）：
-
-1. 三处挂载点（底部面板、悬浮小窗、slot 右侧插槽）都在**挂载那一刻**用 IIFE 求值
-   `bsViewProps(...)`，视图拿到的 `scope.sessionId` 从此固定，之后不再更新。
-2. 会话切换检测走 `setInterval` 1 秒轮询 + 宿主订阅回调；回调触发时宿主状态往往
-   **尚未落定**，`sessionKeyOf()` 返回的是**上一个**会话。
-3. 会话变化后没有任何重挂载动作，视图只能沿用旧 props 继续请求旧工作区数据。
-
-**修复**：
-
-- `bpRemountAll()`：会话变化后卸载并重建底部面板 / 悬浮小窗；重挂载前**重新解析**
-  `sessionKeyOf(adapterCtx)`，不再沿用轮询缓存；
-- 切换后 3 秒内每 100ms 探测一次，发现新键立即重挂载并停止（覆盖"宿主状态晚于
-  切换事件落定"的情况）；
-- 全部 `bsViewProps` 调用点优先使用"当前解析出的键"，最后才回落到缓存；
-- **slot 右侧插槽**给内层视图加 `key = 's:' + 会话键`：会话变化时由 React 强制
-  卸载重建该视图，等价于手动关闭再打开（这是原先唯一有效的办法）。
-
-**自查方法**（下次遇到同类问题先跑这个，不要先改代码）：
-
-```js
-// 浏览器 Console
-setInterval(() => { const d = window.__shinkiDebug?.(); if (d)
-  console.log('now=', d.sessionKeyNow, 'adapter=', d.adapterKey); }, 500);
-```
-
-判读：
-
-| 观察 | 结论 |
-|---|---|
-| `adapter=` 立刻变新、界面仍旧 | 视图没按新 `sessionId` 重取数据 |
-| `adapter=` 变了、`now=` 慢一拍 | 插件检测/赋值滞后 |
-| `adapter=` 本身慢一拍 | 宿主会话状态发布滞后，需要换数据源 |
-
-**教训**：此问题最初被误判为 git/svn 插件的问题。工作区路径的真实来源是**服务端**按
-`sessionId` 解析（`routes.js` 的 `resolveSessionCwd`），所以 `scope.cwd` 为空并不影响；
-真正要保证的是 `scope.sessionId` 始终是最新值。
-
-另注：该仓库 `lib/client.js` 在客户端运行期间会被占用，`python` 写入常报
-`PermissionError`；**用 .NET `File.WriteAllText` 写入是可行的**，或先卸载插件再写。
-
-### 临时视图工具（已实现）
-
-- **[`sidebar_temp_view`](docs/temp-views-tool.md)** —— agent 在运行时注册 / 修改 / 卸载**临时视图**；
-  只存在于本次运行（重启即消失），且**只对创建它的会话可见**。
-- 支持全部**停靠形态**（`form`）：`mini`（悬浮）、`right`（右侧栏）、`bottom`（底部栏）、`popup`（全屏/弹出）、
-  `mainView`（会话视图 TAG 页）；`form` 可传数组。
-- 支持三种**内容形态**（`kind`，与 `form` 正交）：
-
-  | kind | 内容 | 渲染方式 | 能调插件路由 |
-  |---|---|---|---|
-  | `text`（默认） | 纯文本 | 等宽多行 | — |
-  | `html` | HTML 字符串（≤64KB） | `<iframe sandbox="allow-scripts" srcdoc>`（**无 allow-same-origin**） | ❌ 独立源，不能同源 fetch |
-  | `component` | `{pluginId, componentId, props}` | 由**已注册的客户端组件**渲染 | ✅ 与宿主同源，适合完整交互/自测 |
-
-- 标题自动加 `【临时】` 前缀；`text` / `html` / `component` 三选一。
-- **浮窗尺寸**：`mini` 支持 `x/y/width/height` 参数（宽≥160、高≥60，超出视口自动收敛）；
-  `component`/`html` 不给尺寸时默认 **360×240**；右下角还能手动拖拽缩放，松手后按「会话+视图」记住。
-- **头部不遮挡**：`tmp-` 临时浮窗的控件条常驻，正文预留 22px，内容不会被盖住。
-- `html` 依赖浏览器对 `about:srcdoc` iframe 的支持；若宿主页面 CSP 限制 `frame-src` 可能不显示 ⇒ 此时改用 `component`。
-- 卸载：`unregister(id)` 单个，或 `unregister(scope:'session')` 当前会话全部。
-- 实现：`lib/temp-views-store.js`（内存 store）+ `lib/temp-views-tool.js`（工具）+
-  `lib/index.js`（路由 `/shinki-sidebar-temp/views`）+ `lib/client.js`（客户端轮询对齐）。
-- 契约自检：`node tools/verify-temp-views.mjs`（三种 kind、参数互斥、会话隔离、版本短路）。
-
-#### `component` 形态：跨插件注册组件
-
-组件注册表挂在 **`window.__shinkiTempComponents`**（各插件各自打包、不共享模块图，谁先加载谁初始化，
-注册顺序无关；渲染时按 `pluginId:componentId` 查找）。消费方插件在**浏览器半边**注册一次：
-
-```js
-window.__shinkiTempComponents = window.__shinkiTempComponents || { defs: [] };
-window.__shinkiTempComponents.register({
-  pluginId: 'my-plugin',            // 与工具参数 component.pluginId 一致
-  componentId: 'my-debug-panel',    // 与 component.componentId 一致
-  label: '调试面板',
-  factory: MyDebugPanel,            // React 组件；props = component.props + { tempViewId, tempPlugin }
-});
-```
-
-> 注意：**先加载的插件负责初始化方法**（`get/register`）。若你的插件可能先于 sidebar-tools 加载，
-> 请照 `dsh-shinki-ble-python/lib/client.js` 的 `tempComponentRegistry()` 写法补一份幂等初始化，
-> 不要只写 `window.__shinkiTempComponents.register(...)`（此时对象还不存在）。
-
-agent 侧登记（示例）：
-
-```
-sidebar_temp_view action=register title="FindMy 调试" form=bottom kind=component \
-  component='{"pluginId":"dsh-shinki-ble-tool","componentId":"findmy-scan","props":{"seconds":10,"live":true}}'
-```
-
-- 找不到组件时视图内显示「未注册的组件：pid:cid」+ 注册方式提示，**不会白屏**；
-- 组件渲染抛错由错误边界接住，只在该视图内显示错误，不牵连承载面板；
-- 快照变化时客户端**强制重渲染**已挂载的临时视图（不依赖各停靠形态自身的刷新机制）。
-
-### 授权请求右下角浮层（已实现）
-
-- 数据：host 半边订阅 `session/event` 的 `approval/asked`，进内存环形缓冲（`max=5`，容量 +2）后由
-  `GET /shinki-sidebar-tools/approvals` 暴露；**只提醒、不代替用户批准/拒绝**，重启即清空。
-- 展示：右下角 `#shinki-toast-root`（`column-reverse`：新条目在下、旧条目上推），**默认关闭**；设置页「侧栏工具」
-  可开关并写 `toast.json`；悬停暂停计时，当前会话与页面加载前的历史审批不再弹
-  （已展示 id 存 `localStorage['dsh-shinki-toast:seen:v1']`）。
-- 点击「查看」走 `uiWorkspace.openSession(sessionId)` 切会话（取不到时依次退 `uiSession` 方法探测与 DOM 点击）；
-  自检：`node tools/verify-approvals.mjs`、`node tools/verify-toast-client.mjs`。
-
-## 容器滚动约定（视图宿主必读）
-
-任何承载插件视图的容器都必须写 `overflow: 'hidden'`，否则子视图的 `height: 100%` 会被内容撑破，导致"表格变长后整个视图跟着滚动"。
-
-```js
-// 容器（shinkiViews 宿主 / 临时视图组件容器 / mini 悬浮窗）
-{ display: 'flex', flexDirection: 'column', height: '100%', minHeight: 0, overflow: 'hidden' }
-// 视图内滚动区
-{ flex: '1 1 auto', minHeight: 0, overflow: 'auto' }
-// 视图内固定区
-{ flex: '0 0 auto', maxHeight: '38%', overflow: 'auto' }
-```
-
-踩坑记录：FindMy 视图（BLE 插件）与临时视图 `component` 形态的容器都曾漏写 `overflow: 'hidden'`，表现为"滚动落在最外层"。对应说明见 `dsh-shinki-ble-python/docs/findmy-dev-notes.md` 第 10 节。
-### 强制 CSS（`!important`）说明
-
-本插件对承载面板视图的宿主注入：
-
-```css
-#shinki-tools-panel [data-shinki-view-body] > *:not([data-shinki-view-selfscroll]),
-#shinki-tools-detached [data-shinki-view-body] > *:not([data-shinki-view-selfscroll]) {
-  height: auto !important; min-height: 100%; overflow: visible !important;
-}
-```
-
-- 目的是让**面板整体滚动**、视图按内容撑高；
-- 副作用：经 `ctx.shinkiViews.register` 注册的插件视图**无法**用自己的根节点承接内部滚动（`overflow:hidden` 会被覆盖成 `visible`）；
-- 插件侧绕行：外层普通 div 承接规则，内层 `position:absolute; inset:0` 铺满宿主 body 自行滚动；
-- **opt-out（已实现）**：视图根节点加 `data-shinki-view-selfscroll="1"` 即被排除在该规则之外，由视图自己负责滚动；不带该属性时行为不变（面板整体滚动）。详见 `dsh-shinki-ble-python/docs/findmy-dev-notes.md` 第 11 节。
+- 已**无第三方强依赖**：`dsh-better-sidebar` 于 2026-10-08 停用，原过渡桥已移除，仅「打开视图」的最后
+  兜底分支保留其方法名探测；服务缺失时只是少一个形态，消费方无需改动。
+- 下游消费方（`dsh-shinki-svn-graph`、music、git-graph、serial-monitor、BLE / CAN 工具等）通过
+  `ctx.shinkiViews.register()` 的一句声明接入；新增形态属于**本插件单点变更**。
+- 待办与逐项判定标准维护在 [`docs/adaptation-status.md`](docs/adaptation-status.md)，本 README 不重复跟踪。
