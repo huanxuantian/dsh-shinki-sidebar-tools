@@ -1,12 +1,15 @@
 # dsh-shinki-sidebar-tools
 
-DSH 右侧边栏增强（纯客户端、零注入）：
+DSH 右侧边栏增强（零注入设计）：
 
 1. **tab 条可滚动**：原样式是 `overflow-x:auto` 但 `scrollbar-width:none` + `touch-action:none`（能滚却看不见、摸不着）。
    本插件加**可见细滚动条**并放开触摸平移，支持触控板两指 / 滚轮 / Shift+滚轮 / 拖滚动条。
-2. **「+」右键创建视图**：在 strip 控件区（含 `+`、分屏、面板控件）**右键**弹出「创建视图」菜单，
-   列出**已注册视图**（尝试从 `ctx.sidebarRightTabs` 枚举）与**内置视图**，点击即 `ctx.sidebarRight.openTab(kind)` 创建。
+2. **「≡」全部视图**：右下角固定一个 `≡` 浮层按钮，枚举各 tab 条里的全部 tab，点击即滚到它并模拟点击激活；
+   同一菜单还列出**本插件注册的可创建视图**（带注册目标徽标）、`📥 底部面板` 开关、迷你 / 悬停视图与独立弹窗分区。
+   （原「右键弹出创建视图菜单」的 DOM hack 已按用户要求移除，不再改写页面右键行为。）
 3. **指南入口**：额外往 `sidebar.right.tab.guide.entry` 注入一个「创建视图」列表（`+` 打开的就是指南）。
+4. **临时视图**：agent 工具 `sidebar_temp_view` 在当前会话注册 / 修改 / 卸载临时视图，支持 text / html / component 三种内容形态（见下文）。
+5. **授权浮层**：右下角浮层提醒待审批请求，默认关闭、设置页可开关（见下文）。
 
 ## 安装
 
@@ -31,8 +34,8 @@ const application = runProfile({ profile: "desktop", args: ["--no-open", "--port
 - **登记机制**：包名会被写进 profile 的 `package.json` → `dsh.profile.bundles`，插件自带的
   `cordis.patch.yml`（`dsh.bundle.patch`）作为 bundle 层生效。手工往 `cordis.patch.yml` 写 `insert`
   roster 行是**另一种**机制（设置页插件管理器用的），只写 roster 不会被 Loader 挂载。
-- **生效**：官方客户端**热挂载**，通常不需要重启；本插件是纯客户端增强（host 半边为空实现），
-  浏览器半边随页面加载。
+- **生效**：官方客户端**热挂载**，通常不需要重启；host 半边只注册只读路由与 `sidebar_temp_view` 工具
+  （`inject: ['webServer','tools']`），其余能力在浏览器半边随页面加载。
 - **依赖**：无。零注入设计 —— 失败不影响宿主。
 - **卸载**：`dsh plugin --profile desktop remove dsh-shinki-sidebar-tools`。
 
@@ -47,13 +50,19 @@ dsh plugin --profile <profile> add link:/绝对路径/dsh-shinki-sidebar-tools  
 | 能力 | 手段 |
 |---|---|
 | 滚动 | 注入 CSS 覆盖 `[class*="_stripTabs_"]`（用类名片段而非哈希全名，构建变更后依然命中） |
-| 右键菜单 | 捕获阶段监听 `contextmenu`，命中 `[class*="stripChrome"]` 时自绘菜单（纯 DOM，不依赖 React） |
-| 视图清单 | 优先枚举 `sidebarRightTabs`（`items/defs/types/registry`），失败则用内置清单 |
+| ≡ 菜单 | 右下角 `≡` 按钮（纯 DOM，不依赖 React）枚举 tab 条里的全部 tab，`scrollIntoView` 后模拟 click 激活；同一菜单含可创建视图 / 面板开关 / 迷你 / 弹窗分区 |
+| 视图清单 | 先取本插件注册表 `viewSpecs`，再枚举 `sidebarRightTabs`（`items/defs/types/registry`）；官方 kind 只在枚举计数时用，`BUILTIN_VIEWS` 仅作兜底 |
+| 临时视图 | 宿主内存 store + 只读路由 `/shinki-sidebar-temp/views`（客户端 1.5s 轮询对齐），`tmp-` 前缀、按会话归属 |
+| 授权浮层 | 宿主订阅 `session/event` 的 `approval/asked` 进环形缓冲 + `GET /shinki-sidebar-tools/approvals`（客户端 2s 轮询，默认关闭） |
 | 容错 | 零注入 + `ctx.get()`；任何失败只 `console.warn`，不影响宿主启动 |
 
 ## 配置
 
-内置视图清单在 `lib/client.js` 的 `BUILTIN_VIEWS`（默认含 `dsh-shinki-music` → 「音乐播放器」）。
+内置视图清单 `BUILTIN_VIEWS`（`lib/client.js`）现在是**空数组**：可创建视图按 `registerView` 的注册信息
+**动态增删**，不再硬编码（避免列出未注册/不存在的视图）。
+
+授权浮层配置在 `<DSH_HOME>/plugin-data/dsh-shinki-sidebar-tools/toast.json`：`enabled`（默认 `false`）、
+`maxVisible`（1..10，默认 3）、`dwellMs`（3000..60000，默认 8000）；设置页「侧栏工具」写的就是它。
 
 ## 路线图：接替 dsh-better-sidebar 的部分能力
 
@@ -90,7 +99,7 @@ dsh plugin --profile <profile> add link:/绝对路径/dsh-shinki-sidebar-tools  
 
 ### 现状（已具备的基础）
 
-- 打开视图：`sidebarRight.openTab` 优先，`betterSidebar` 的方法名探测**仅作兜底**（5 处引用，全部在兜底分支）
+- 打开视图：`sidebarRight.openTab` 优先，`betterSidebar` 的方法名探测**仅作兜底**（集中在 `openView` 的最后一段兜底分支）
 - 视图发现：**动态**读官方注册表 `sidebarRightTabs.entries()`，硬编码清单只在枚举失败时兜底
 - 与 `dsh-shinki-music` **无强依赖**（双向审计通过）：音乐插件自带四个入口，本插件也可独立工作
 
@@ -344,7 +353,7 @@ h.dispose();
 | 1 | 隐藏自检视图 `dsh-shinki-tools:sandbox` | ✅ 已**整块移除**（不再出现在任何菜单/可创建清单里） |
 | 2 | `serial-monitor` 的 4 处 `ctx.betterSidebar.*` | ⏳ 仍在：better-sidebar 已禁用 ⇒ 属性访问被 cordis 拒、功能静默降级（不崩）；建议改 `ctx.get('betterSidebar')` 或删老模式分支 |
 | 3 | `bottom` 自实现 | ✅ 已完成（自绘面板；让位/滚动/层次/按会话状态均实测通过） |
-| 4 | 其余插件接入 | ✅ 已完成（`js-ble-tool` / `ble-tool` 也已在"新模式"注册，共 6 插件 8 视图） |
+| 4 | 其余插件接入 | ✅ 已完成（`js-ble-tool` / `ble-tool` 也已在"新模式"注册，连同 `can-tool` 共 7 插件 9 视图） |
 | 5 | `force` 短路的可观测性 | ✅ 已解决（派发留痕） |
 | 6 | ~~`targets:['right']` 无效 + 「未知形态已跳过：right」噪音~~ | ✅ 已修（2026-10-09）：`right` 成为正式形态（与 `bottom` 共用注册 + 同 id 去重，注销后允许重注册） |
 
@@ -383,8 +392,8 @@ node tools/smoke-client.mjs <pkg>/lib/client.js [更多 client.js ...]
 `Audio` / `MutationObserver` 等，加载 bundle（`factory(require)`）并调用 `apply(桩 ctx)`，
 同时捕获 `effect` 回调抛错 ⇒ 覆盖"能加载"与"能激活"两件事。
 
-契约/行为回归测试 `tools/verify-props-contract.mjs`（163 项断言：props 契约、按会话状态、两轴滚动兜底、
-拖拽热区、层次、纯 CSS 尺寸契约、渲染错误边界）：
+契约/行为回归测试 `tools/verify-props-contract.mjs`（断言数随实现增长，脚本只报「全部通过 / 失败 N 项」：
+props 契约、按会话状态、两轴滚动兜底、拖拽热区、层次、纯 CSS 尺寸契约、渲染错误边界、mini 形态）：
 
 ```bash
 node tools/verify-props-contract.mjs [<pkg>/lib/client.js]
@@ -573,6 +582,16 @@ sidebar_temp_view action=register title="FindMy 调试" form=bottom kind=compone
 - 组件渲染抛错由错误边界接住，只在该视图内显示错误，不牵连承载面板；
 - 快照变化时客户端**强制重渲染**已挂载的临时视图（不依赖各停靠形态自身的刷新机制）。
 
+### 授权请求右下角浮层（已实现）
+
+- 数据：host 半边订阅 `session/event` 的 `approval/asked`，进内存环形缓冲（`max=5`，容量 +2）后由
+  `GET /shinki-sidebar-tools/approvals` 暴露；**只提醒、不代替用户批准/拒绝**，重启即清空。
+- 展示：右下角 `#shinki-toast-root`（`column-reverse`：新条目在下、旧条目上推），**默认关闭**；设置页「侧栏工具」
+  可开关并写 `toast.json`；悬停暂停计时，当前会话与页面加载前的历史审批不再弹
+  （已展示 id 存 `localStorage['dsh-shinki-toast:seen:v1']`）。
+- 点击「查看」走 `uiWorkspace.openSession(sessionId)` 切会话（取不到时依次退 `uiSession` 方法探测与 DOM 点击）；
+  自检：`node tools/verify-approvals.mjs`、`node tools/verify-toast-client.mjs`。
+
 ## 容器滚动约定（视图宿主必读）
 
 任何承载插件视图的容器都必须写 `overflow: 'hidden'`，否则子视图的 `height: 100%` 会被内容撑破，导致"表格变长后整个视图跟着滚动"。
@@ -592,8 +611,10 @@ sidebar_temp_view action=register title="FindMy 调试" form=bottom kind=compone
 本插件对承载面板视图的宿主注入：
 
 ```css
-#shinki-tools-panel [data-shinki-view-body] > *,
-#shinki-tools-detached [data-shinki-view-body] > * { height: auto !important; min-height: 100%; overflow: visible !important; }
+#shinki-tools-panel [data-shinki-view-body] > *:not([data-shinki-view-selfscroll]),
+#shinki-tools-detached [data-shinki-view-body] > *:not([data-shinki-view-selfscroll]) {
+  height: auto !important; min-height: 100%; overflow: visible !important;
+}
 ```
 
 - 目的是让**面板整体滚动**、视图按内容撑高；
