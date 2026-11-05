@@ -55,11 +55,11 @@ host 半边只 `inject: ['webServer', 'tools']`。任何一步异常都只 `cons
 
 ---
 
-### 对接指南（其他插件如何接入）
+## 对接指南（其他插件如何接入）
 
 本插件是「侧栏/视图框架」，其它插件通过下面三条通道接入，**都不需要改动本插件代码**。
 
-#### 1. 注册自己的视图（推荐）
+### 1. 注册自己的视图（推荐）
 
 ```js
 // 等到服务就绪再注册，避免注入顺序问题
@@ -98,7 +98,7 @@ h('div', { 'data-shinki-view-selfscroll': '1',
 // 方式 B：外层普通 div 承接强制规则，内层 position:absolute; inset:0 铺满宿主 body
 ```
 
-#### 2. 临时视图（agent 工具 `sidebar_temp_view`）
+### 2. 临时视图（agent 工具 `sidebar_temp_view`）
 
 不用注册组件就能往会话里塞调试面板，`kind` 三选一：
 
@@ -110,7 +110,7 @@ h('div', { 'data-shinki-view-selfscroll': '1',
 
 其它参数：`action`（register/update/unregister/list）、`form`（mini/right/bottom/popup/mainView）、`title`，mini 可给 `x/y/width/height`（≥160×60）。视图按会话隔离、重启即清。
 
-#### 3. 注册可被临时视图引用的组件
+### 3. 注册可被临时视图引用的组件
 
 ```js
 // 插件浏览器半边加载时执行一次
@@ -124,7 +124,7 @@ window.__shinkiTempComponents.register({
 
 之后任意会话都可以用 `sidebar_temp_view` 的 `component` 形态引用它；找不到组件时面板显示「未注册的组件」提示而不是白屏。
 
-#### 4. 与授权浮层的关系
+### 4. 与授权浮层的关系
 
 授权浮层由本插件自己采集 `approval/asked` 并渲染，**其他插件无需对接**；如需自测浮层，可 `POST /shinki-sidebar-tools/approvals/test` 注入一条测试提醒。
 
