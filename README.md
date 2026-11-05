@@ -55,6 +55,81 @@ host 半边只 `inject: ['webServer', 'tools']`。任何一步异常都只 `cons
 
 ---
 
+### 对接指南（其他插件如何接入）
+
+本插件是「侧栏/视图框架」，其它插件通过下面三条通道接入，**都不需要改动本插件代码**。
+
+#### 1. 注册自己的视图（推荐）
+
+```js
+// 等到服务就绪再注册，避免注入顺序问题
+waitService(ctx, 'shinkiViews', (sv) => {
+  const off = sv.register({
+    id: 'my-plugin-view',        // 全局唯一
+    title: '我的视图',
+    order: 40,                    // 可选，决定 tab 顺序
+    targets: ['bottom', 'right'], // 可停靠位置：bottom / right / mini / popup / mainView
+    background: 'pause',          // 可选：视图隐藏时的后台行为
+    render: (props) => h(MyView, props), // 返回 React 元素
+    // 可选：后台生命周期（也可用 sv.lifecycle.register(key, {...}) 单独登记）
+    onSuspend(policy) {}, onResume() {}, onStop() {},
+  });
+  // off() 可注销
+});
+```
+
+`ctx.shinkiViews`（`CONTRACT_VERSION = 3`）暴露的方法：
+
+| 方法 | 作用 |
+|---|---|
+| `register(spec)` | 注册视图，返回注销函数 |
+| `open(id, 'bottom' \| 'right')` | 打开并切到该视图 |
+| `openPopup(id)` / `popupables()` | 弹出窗口 / 列出可弹出视图 |
+| `openMini(id)` / `toggleMini(id)` / `closeMini()` / `hideMini(id)` | 迷你（悬停）窗口控制 |
+| `lifecycle.register(key, { onSuspend, onResume, onStop })` | 该视图的后台生命周期钩子 |
+
+**视图根节点布局约定**：宿主对 `[data-shinki-view-body] > *` 会强制 `height:auto / overflow:visible`，视图要内部滚动时必须二选一：
+
+```js
+// 方式 A（推荐）：声明 opt-out，自行接管滚动
+h('div', { 'data-shinki-view-selfscroll': '1',
+           style: { height: '100%', minHeight: 0, overflow: 'hidden', display: 'flex', flexDirection: 'column' } }, …)
+
+// 方式 B：外层普通 div 承接强制规则，内层 position:absolute; inset:0 铺满宿主 body
+```
+
+#### 2. 临时视图（agent 工具 `sidebar_temp_view`）
+
+不用注册组件就能往会话里塞调试面板，`kind` 三选一：
+
+| kind | 参数 | 说明 |
+|---|---|---|
+| `text`（默认） | `text` | 纯文本 |
+| `html` | `html`（≤64KB） | 客户端用 `<iframe sandbox="allow-scripts">` 渲染，**不允许同源 fetch**（调不了插件路由） |
+| `component` | `component`（JSON） | `{"pluginId":"…","componentId":"…","props":{…}}`，跑在宿主页面内，可正常调路由/服务 |
+
+其它参数：`action`（register/update/unregister/list）、`form`（mini/right/bottom/popup/mainView）、`title`，mini 可给 `x/y/width/height`（≥160×60）。视图按会话隔离、重启即清。
+
+#### 3. 注册可被临时视图引用的组件
+
+```js
+// 插件浏览器半边加载时执行一次
+window.__shinkiTempComponents.register({
+  pluginId: 'my-plugin',
+  componentId: 'my-panel',
+  label: '我的面板',          // 可选
+  factory: (props) => h(MyPanel, props),   // 返回 React 元素
+});
+```
+
+之后任意会话都可以用 `sidebar_temp_view` 的 `component` 形态引用它；找不到组件时面板显示「未注册的组件」提示而不是白屏。
+
+#### 4. 与授权浮层的关系
+
+授权浮层由本插件自己采集 `approval/asked` 并渲染，**其他插件无需对接**；如需自测浮层，可 `POST /shinki-sidebar-tools/approvals/test` 注入一条测试提醒。
+
+---
+
 ## HTTP API（host 半边）
 
 路由以 `ctx.webServer.register({ kind: 'prefix' })` 注册；本插件未额外实现回环 / Host 栅栏，
